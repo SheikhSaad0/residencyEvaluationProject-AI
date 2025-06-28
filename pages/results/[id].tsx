@@ -213,7 +213,7 @@ export default function ResultsPage() {
     }
   };
 
-  const handleEvaluationChange = (stepKey: string, field: string, value: any) => {
+  const handleEvaluationChange = (stepKey: string, field: string, value: string | number | undefined) => {
     if (editedEvaluation) {
         const newEvaluation = { ...editedEvaluation };
         (newEvaluation[stepKey] as EvaluationStep) = {
@@ -224,7 +224,7 @@ export default function ResultsPage() {
     }
   };
 
-  const handleOverallChange = (field: string, value: any) => {
+  const handleOverallChange = (field: string, value: string | number | undefined) => {
     if (editedEvaluation) {
         setEditedEvaluation({ ...editedEvaluation, [field]: value });
     }
@@ -381,7 +381,7 @@ export default function ResultsPage() {
   );
 }
 
-const EvaluationSection = ({ step, aiData, editedData, isFinalized, onChange }: { step: ProcedureStep, aiData: EvaluationStep, editedData: EvaluationStep, isFinalized: boolean, onChange: (field: string, value: any) => void }) => {
+const EvaluationSection = ({ step, aiData, editedData, isFinalized, onChange }: { step: ProcedureStep, aiData: EvaluationStep, editedData: EvaluationStep, isFinalized: boolean, onChange: (field: string, value: string | number | undefined) => void }) => {
     const [isManuallyOpened, setIsManuallyOpened] = useState(false);
     const wasPerformed = aiData && aiData.score > 0;
 

@@ -91,12 +91,30 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: {key: string, name:
     },
 };
 
-const createEmailHtml = (surgery: string, evaluation: any, residentName?: string, additionalContext?: string) => {
+interface EvaluationStepData {
+  score: number;
+  time: string;
+  comments: string;
+  attendingScore?: number;
+  attendingComments?: string;
+  attendingTime?: string;
+}
+
+interface EvaluationData {
+  [key: string]: EvaluationStepData | number | string | boolean | undefined;
+  caseDifficulty: number;
+  attendingCaseDifficulty?: number;
+  additionalComments: string;
+  attendingAdditionalComments?: string;
+  transcription: string;
+}
+
+const createEmailHtml = (surgery: string, evaluation: EvaluationData, residentName?: string, additionalContext?: string) => {
   const config = EVALUATION_CONFIGS[surgery as keyof typeof EVALUATION_CONFIGS];
   if (!config) return `<p>Could not generate report for surgery: ${surgery}</p>`;
 
   const stepsHtml = config.procedureSteps.map(step => {
-    const data = evaluation[step.key];
+    const data = evaluation[step.key] as EvaluationStepData;
     const attendingScore = data.attendingScore ?? data.score;
     
     if (!data || attendingScore === 0) {
