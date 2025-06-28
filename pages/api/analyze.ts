@@ -2,88 +2,90 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import formidable from 'formidable';
 import fs from 'fs';
 
-// This is the main configuration for your evaluation.
-// It defines the structure and scoring for the AI.
-const EVALUATION_CONFIG = {
-  // The name of the surgery, passed to the AI for context.
-  surgeryName: 'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)',
-  
-  // The different steps of the procedure that the AI will evaluate.
-  procedureSteps: [
-    { key: 'portPlacement', name: 'Port Placement and Creation of Preperitoneal Space', avgTime: '15-30 minutes' },
-    { key: 'herniaDissection', name: 'Hernia Sac Reduction and Dissection of Hernia Space', avgTime: '15-30 minutes' },
-    { key: 'meshPlacement', name: 'Mesh Placement', avgTime: '10-15 minutes' },
-    { key: 'portClosure', name: 'Port Closure', avgTime: '5-10 minutes' },
-    { key: 'skinClosure', name: 'Skin Closure', avgTime: '2-5 minutes' },
-  ],
+const EVALUATION_CONFIGS = {
+    'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement and Creation of Preperitoneal Space', avgTime: '15-30 minutes' },
+            { key: 'herniaDissection', name: 'Hernia Sac Reduction and Dissection of Hernia Space', avgTime: '15-30 minutes' },
+            { key: 'meshPlacement', name: 'Mesh Placement', avgTime: '10-15 minutes' },
+            { key: 'portClosure', name: 'Port Closure', avgTime: '5-10 minutes' },
+            { key: 'skinClosure', name: 'Skin Closure', avgTime: '2-5 minutes' },
+        ],
+    },
+    'Laparoscopic Cholecystectomy': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement', avgTime: '5-10' },
+            { key: 'calotTriangleDissection', name: "Dissection of Calot's Triangle", avgTime: '10-25' },
+            { key: 'cysticArteryDuctClipping', name: 'Clipping and division pf Cystic Artery and Duct', avgTime: '5-10' },
+            { key: 'gallbladderDissection', name: 'Gallbladder Dissection of the Liver', avgTime: '10-20' },
+            { key: 'specimenRemoval', name: 'Specimen removal', avgTime: '5-10' },
+            { key: 'portClosure', name: 'Port Closure', avgTime: '5-10' },
+            { key: 'skinClosure', name: 'Skin Closure', avgTime: '2-5' },
+        ],
+    },
+    'Robotic Cholecystectomy': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement', avgTime: '5-10' },
+            { key: 'calotTriangleDissection', name: "Dissection of Calot's Triangle", avgTime: '10-25' },
+            { key: 'cysticArteryDuctClipping', name: 'Clipping and division pf Cystic Artery and Duct', avgTime: '5-10' },
+            { key: 'gallbladderDissection', name: 'Gallbladder Dissection of the Liver', avgTime: '10-20' },
+            { key: 'specimenRemoval', name: 'Specimen removal', avgTime: '5-10' },
+            { key: 'portClosure', name: 'Port Closure', avgTime: '5-10' },
+            { key: 'skinClosure', name: 'Skin Closure', avgTime: '2-5' },
+        ],
+    },
+    'Robotic Assisted Laparoscopic Inguinal Hernia Repair (TAPP)': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement', avgTime: '5-10 minutes' },
+            { key: 'robotDocking', name: 'Docking the robot', avgTime: '5-15 minutes' },
+            { key: 'instrumentPlacement', name: 'Instrument Placement', avgTime: '2-5 minutes' },
+            { key: 'herniaReduction', name: 'Reduction of Hernia', avgTime: '10-20 minutes' },
+            { key: 'flapCreation', name: 'Flap Creation', avgTime: '20-40 minutes' },
+            { key: 'meshPlacement', name: 'Mesh Placement/Fixation', avgTime: '15-30 minutes' },
+            { key: 'flapClosure', name: 'Flap Closure', avgTime: '10-20 minutes' },
+            { key: 'undocking', name: 'Undocking/trocar removal', avgTime: '5-10 minutes' },
+            { key: 'skinClosure', name: 'Skin Closure', avgTime: '5-10 minutes' },
+        ],
+    },
+    'Robotic Lap Ventral Hernia Repair (TAPP)': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement', avgTime: '5-10 minutes' },
+            { key: 'robotDocking', name: 'Docking the robot', avgTime: '5-15 minutes' },
+            { key: 'instrumentPlacement', name: 'Instrument Placement', avgTime: '2-5 minutes' },
+            { key: 'herniaReduction', name: 'Reduction of Hernia', avgTime: '10-20 minutes' },
+            { key: 'flapCreation', name: 'Flap Creation', avgTime: '20-40 minutes' },
+            { key: 'herniaClosure', name: 'Hernia Closure', avgTime: '10-20 minutes' },
+            { key: 'meshPlacement', name: 'Mesh Placement/Fixation', avgTime: '15-30 minutes' },
+            { key: 'flapClosure', name: 'Flap Closure', avgTime: '10-20 minutes' },
+            { key: 'undocking', name: 'Undocking/trocar removal', avgTime: '5-10 minutes' },
+            { key: 'skinClosure', name: 'Skin Closure', avgTime: '5-10 minutes' },
+        ],
+    },
+    'Laparoscopic Appendicectomy': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement', avgTime: '5–10 min' },
+            { key: 'appendixDissection', name: 'Identification, Dissection & Exposure of Appendix', avgTime: '10–20 min' },
+            { key: 'mesoappendixDivision', name: 'Division of Mesoappendix and Appendix Base', avgTime: '5–10 min' },
+            { key: 'specimenExtraction', name: 'Specimen Extraction', avgTime: '2–5 min' },
+            { key: 'portClosure', name: 'Port Closure', avgTime: '5–10 min' },
+            { key: 'skinClosure', name: 'Skin Closure', avgTime: '2–5 min' },
+        ],
+    },
+};
 
-  // The scoring scale that the AI will use to rate each step.
-  scoringScale: [
+const scoringScale = [
     { score: 1, description: 'Resident observed only or attempted but was unsafe; attending performed the step.' },
     { score: 2, description: 'Resident performed less than 50% of the step before the attending took over.' },
     { score: 3, description: 'Resident performed more than 50% of the step but required assistance.' },
     { score: 4, description: 'Resident completed the entire step with coaching or guidance from the attending.' },
     { score: 5, description: 'Resident completed the entire step independently, without assistance.' },
-  ],
+];
 
-  // The criteria for assessing the overall difficulty of the case.
-  difficultyRating: [
+const difficultyRating = [
     { level: 1, description: 'Low Difficulty: Primary, straightforward case with normal anatomy and no prior abdominal or pelvic surgeries. Minimal dissection required; no significant adhesions or anatomical distortion.' },
     { level: 2, description: 'Moderate Difficulty: Case involves mild to moderate adhesions or anatomical variation. May include BMI-related challenges, large hernias, or prior unrelated abdominal surgeries not directly affecting the operative field.' },
     { level: 3, description: 'High Difficulty: Redo or complex case with prior related surgeries (e.g., prior hernia repair, laparotomy). Significant adhesions, distorted anatomy, fibrosis, or other factors requiring advanced dissection and judgment.' },
-  ],
-};
-
-
-// Define the expected structure of the JSON output from the AI.
-// This helps ensure the AI's response is consistent and easy to work with.
-const RESPONSE_JSON_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    portPlacement: {
-      type: "OBJECT",
-      properties: {
-        score: { type: "NUMBER" },
-        time: { type: "STRING" },
-        comments: { type: "STRING" }
-      }
-    },
-    herniaDissection: {
-      type: "OBJECT",
-      properties: {
-        score: { type: "NUMBER" },
-        time: { type: "STRING" },
-        comments: { type: "STRING" }
-      }
-    },
-    meshPlacement: {
-      type: "OBJECT",
-      properties: {
-        score: { type: "NUMBER" },
-        time: { type: "STRING" },
-        comments: { type: "STRING" }
-      }
-    },
-    portClosure: {
-      type: "OBJECT",
-      properties: {
-        score: { type: "NUMBER" },
-        time: { type: "STRING" },
-        comments: { type: "STRING" }
-      }
-    },
-    skinClosure: {
-      type: "OBJECT",
-      properties: {
-        score: { type: "NUMBER" },
-        time: { type: "STRING" },
-        comments: { type: "STRING" }
-      }
-    },
-    caseDifficulty: { type: "NUMBER" },
-    additionalComments: { type: "STRING" },
-  }
-};
+];
 
 
 // Disable Next.js body parsing to allow formidable to handle the file stream.
@@ -106,14 +108,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // --- 1. PARSE THE INCOMING FILE ---
   const form = formidable({});
   let audioFile: formidable.File | null = null;
+  let surgeryName:string = '';
+
 
   try {
     const [fields, files] = await form.parse(req);
     audioFile = files.file?.[0] ?? null;
+    surgeryName = fields.surgery?.[0] ?? '';
 
     if (!audioFile) {
       return res.status(400).json({ message: 'No file uploaded.' });
     }
+     if (!surgeryName || !EVALUATION_CONFIGS[surgeryName as keyof typeof EVALUATION_CONFIGS]) {
+      return res.status(400).json({ message: 'Invalid surgery name provided.' });
+    }
+
 
     // --- 2. TRANSCRIBE THE AUDIO FILE ---
     console.log('Starting transcription...');
@@ -128,7 +137,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // --- 3. EVALUATE THE TRANSCRIPT ---
     console.log('Starting evaluation...');
-    const evaluation = await evaluateTranscriptWithGemini(transcription);
+    const evaluation = await evaluateTranscriptWithGemini(transcription, surgeryName);
     console.log('Evaluation complete.');
 
     // --- 4. RETURN THE RESULT ---
@@ -187,16 +196,39 @@ async function transcribeAudioWithGemini(audioBase64: string): Promise<string> {
  * @param transcription - The text transcript of the surgery.
  * @returns A structured JSON object containing the evaluation.
  */
-async function evaluateTranscriptWithGemini(transcription: string) {
+async function evaluateTranscriptWithGemini(transcription: string, surgeryName: string) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY environment variable not set.");
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const EVALUATION_CONFIG = EVALUATION_CONFIGS[surgeryName as keyof typeof EVALUATION_CONFIGS];
+
+    // Define the expected structure of the JSON output from the AI.
+    // This helps ensure the AI's response is consistent and easy to work with.
+    const RESPONSE_JSON_SCHEMA = {
+      type: "OBJECT",
+      properties: {
+        ...EVALUATION_CONFIG.procedureSteps.reduce((acc: any, step: any) => {
+          acc[step.key] = {
+            type: "OBJECT",
+            properties: {
+              score: { type: "NUMBER" },
+              time: { type: "STRING" },
+              comments: { type: "STRING" }
+            }
+          };
+          return acc;
+        }, {}),
+        caseDifficulty: { type: "NUMBER" },
+        additionalComments: { type: "STRING" },
+      }
+    };
 
     // This detailed prompt instructs the AI on exactly how to perform the evaluation.
     const prompt = `
       You are an expert surgical education analyst. Your task is to evaluate a resident's performance during a surgical procedure based on the provided transcript.
       
-      **Procedure:** ${EVALUATION_CONFIG.surgeryName}
+      **Procedure:** ${surgeryName}
       
       **Transcript:**
       ---
@@ -206,13 +238,13 @@ async function evaluateTranscriptWithGemini(transcription: string) {
       **Evaluation Criteria:**
       
       **1. Scoring Scale:**
-      ${EVALUATION_CONFIG.scoringScale.map(s => `- ${s.score}: ${s.description}`).join('\n')}
+      ${scoringScale.map(s => `- ${s.score}: ${s.description}`).join('\n')}
       
       **2. Procedure Steps & Average Times:**
-      ${EVALUATION_CONFIG.procedureSteps.map(p => `- ${p.name} (${p.avgTime})`).join('\n')}
+      ${EVALUATION_CONFIG.procedureSteps.map((p: any) => `- ${p.name} (${p.avgTime})`).join('\n')}
       
       **3. Case Difficulty Rating:**
-      ${EVALUATION_CONFIG.difficultyRating.map(d => `- Level ${d.level}: ${d.description}`).join('\n')}
+      ${difficultyRating.map(d => `- Level ${d.level}: ${d.description}`).join('\n')}
       
       **Instructions:**
       1.  Read the entire transcript carefully.

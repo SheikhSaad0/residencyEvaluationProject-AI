@@ -3,10 +3,12 @@ import React from 'react';
 // A list of surgeries that the user can select from.
 // This could be fetched from a database in a real application.
 const surgeries = [
-  'Laparoscopic Inguinal Hernia Repair',
-  'Appendectomy',
-  'Cholecystectomy',
-  'Bowel Resection'
+  'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)',
+  'Laparoscopic Cholecystectomy',
+  'Robotic Cholecystectomy',
+  'Robotic Assisted Laparoscopic Inguinal Hernia Repair (TAPP)',
+  'Robotic Lap Ventral Hernia Repair (TAPP)',
+  'Laparoscopic Appendicectomy'
 ];
 
 interface Props {
