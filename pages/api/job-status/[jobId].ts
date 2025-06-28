@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { redis } from '../../../lib/redis'; // Use our new Redis client
+import { kv } from '@vercel/kv'; // Use Vercel KV instead of the direct Redis client
 
 // Define the JobData interface to ensure type safety
 interface JobData {
@@ -26,8 +26,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    // Use redis.get instead of kv.get
-    const job = await redis.get<JobData>(`job:${jobId}`);
+    // Use kv.get, which is consistent with your other API routes
+    const job = await kv.get<JobData>(`job:${jobId}`);
 
     if (!job) {
       return res.status(404).json({ message: 'Job not found.' });
