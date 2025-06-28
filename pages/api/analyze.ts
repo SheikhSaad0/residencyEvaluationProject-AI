@@ -1,6 +1,22 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import formidable from 'formidable';
 import fs from 'fs';
+import { SpeechClient, protos } from '@google-cloud/speech';
+import { Storage } from '@google-cloud/storage'; // Import the Storage client
+
+// Define a type for our evaluation data for better type safety
+interface EvaluationStep {
+  score: number;
+  time: string;
+  comments: string;
+}
+
+interface EvaluationData {
+  [key: string]: EvaluationStep | number | string;
+  caseDifficulty: number;
+  additionalComments: string;
+  transcription: string;
+}
 
 const EVALUATION_CONFIGS = {
     'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)': {
@@ -87,29 +103,20 @@ const difficultyRating = [
     { level: 3, description: 'High Difficulty: Redo or complex case with prior related surgeries (e.g., prior hernia repair, laparotomy). Significant adhesions, distorted anatomy, fibrosis, or other factors requiring advanced dissection and judgment.' },
 ];
 
-
-// Disable Next.js body parsing to allow formidable to handle the file stream.
 export const config = {
   api: {
     bodyParser: false,
   },
 };
 
-/**
- * Main handler for the /api/analyze endpoint.
- * It receives an audio file, transcribes it, and then sends the transcript
- * to an AI model to generate a structured surgical evaluation.
- */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method not allowed' });
   }
 
-  // --- 1. PARSE THE INCOMING FILE ---
   const form = formidable({});
   let audioFile: formidable.File | null = null;
   let surgeryName:string = '';
-
 
   try {
     const [fields, files] = await form.parse(req);
@@ -119,29 +126,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!audioFile) {
       return res.status(400).json({ message: 'No file uploaded.' });
     }
-     if (!surgeryName || !EVALUATION_CONFIGS[surgeryName as keyof typeof EVALUATION_CONFIGS]) {
+    if (!surgeryName || !EVALUATION_CONFIGS[surgeryName as keyof typeof EVALUATION_CONFIGS]) {
       return res.status(400).json({ message: 'Invalid surgery name provided.' });
     }
 
-
-    // --- 2. TRANSCRIBE THE AUDIO FILE ---
-    console.log('Starting transcription...');
-    const fileContent = fs.readFileSync(audioFile.filepath);
-    const audioBytes = fileContent.toString('base64');
-    
-    // We are using a generic Gemini model for transcription here.
-    // In a production scenario, you would use a dedicated Speech-to-Text API for better results.
-    const transcription = await transcribeAudioWithGemini(audioBytes);
+    console.log('Starting transcription for large file...');
+    const transcription = await transcribeWithSpeechToText(audioFile);
     console.log('Transcription complete.');
 
-
-    // --- 3. EVALUATE THE TRANSCRIPT ---
     console.log('Starting evaluation...');
     const evaluation = await evaluateTranscriptWithGemini(transcription, surgeryName);
     console.log('Evaluation complete.');
 
-    // --- 4. RETURN THE RESULT ---
-    // The final result includes the AI-generated evaluation and the full transcript for review.
     res.status(200).json({ ...evaluation, transcription });
 
   } catch (error) {
@@ -150,61 +146,87 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 }
 
-/**
- * Transcribes an audio file using the Gemini API.
- * @param audioBase64 - The Base64-encoded audio data.
- * @returns The transcribed text.
- */
-async function transcribeAudioWithGemini(audioBase64: string): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY environment variable not set.");
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-  
-  const payload = {
-    contents: [
-      {
-        parts: [
-          { text: "Transcribe this audio of a surgical procedure. Provide a clean, readable transcript." },
-          {
-            inlineData: {
-              mimeType: "audio/mp3",
-              data: audioBase64
+async function transcribeWithSpeechToText(audioFile: formidable.File): Promise<string> {
+    const speechClient = new SpeechClient();
+    const storage = new Storage();
+    const bucketName = process.env.GCS_BUCKET_NAME;
+
+    if (!bucketName) {
+        throw new Error("GCS_BUCKET_NAME environment variable not set.");
+    }
+
+    // 1. Upload the file to Google Cloud Storage
+    const destination = `audio-uploads/${audioFile.newFilename}-${Date.now()}`;
+    await storage.bucket(bucketName).upload(audioFile.filepath, {
+        destination: destination,
+    });
+    console.log(`${audioFile.filepath} uploaded to ${bucketName}/${destination}`);
+    const gcsUri = `gs://${bucketName}/${destination}`;
+
+    // 2. Configure the long-running recognition request
+    const audio = {
+        uri: gcsUri,
+    };
+
+    const diarizationConfig: protos.google.cloud.speech.v1.ISpeakerDiarizationConfig = {
+        enableSpeakerDiarization: true,
+        minSpeakerCount: 2,
+        maxSpeakerCount: 2,
+    };
+
+    const config: protos.google.cloud.speech.v1.IRecognitionConfig = {
+        encoding: 'MP3',
+        languageCode: 'en-US',
+        enableWordTimeOffsets: true,
+        diarizationConfig: diarizationConfig,
+        // The sampleRateHertz is not needed for files on GCS; the API determines it automatically.
+    };
+
+    const request: protos.google.cloud.speech.v1.ILongRunningRecognizeRequest = {
+        audio: audio,
+        config: config,
+    };
+
+    // 3. Start the long-running recognition job
+    const [operation] = await speechClient.longRunningRecognize(request);
+
+    // 4. Wait for the job to complete
+    const [response] = await operation.promise();
+    console.log('Long-running transcription job finished.');
+
+    // 5. Delete the file from GCS to save space and costs
+    await storage.bucket(bucketName).file(destination).delete();
+    console.log(`Deleted ${destination} from GCS.`);
+
+
+    // 6. Process the results into a transcript string (same as before)
+    let fullTranscript = '';
+    if (response.results) {
+        response.results.forEach((result: protos.google.cloud.speech.v1.ISpeechRecognitionResult) => {
+            if (result.alternatives && result.alternatives.length > 0) {
+                const alternative = result.alternatives[0];
+                if (alternative.words) {
+                    alternative.words.forEach((wordInfo: protos.google.cloud.speech.v1.IWordInfo) => {
+                        const startTime = `${wordInfo.startTime?.seconds}.${(wordInfo.startTime?.nanos || 0).toString().substring(0, 3)}`;
+                        const speakerTag = wordInfo.speakerTag;
+                        fullTranscript += `[${startTime}s Speaker ${speakerTag}]: ${wordInfo.word}\n`;
+                    });
+                }
             }
-          }
-        ]
-      }
-    ],
-  };
+        });
+    }
 
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Gemini transcription API request failed: ${response.status} ${response.statusText} - ${errorBody}`);
-  }
-
-  const result = await response.json();
-  return result.candidates[0].content.parts[0].text;
+    return fullTranscript;
 }
 
-/**
- * Evaluates a surgical transcript using the Gemini API and a structured prompt.
- * @param transcription - The text transcript of the surgery.
- * @returns A structured JSON object containing the evaluation.
- */
-async function evaluateTranscriptWithGemini(transcription: string, surgeryName: string) {
+
+async function evaluateTranscriptWithGemini(transcription: string, surgeryName: string): Promise<EvaluationData> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY environment variable not set.");
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
     const EVALUATION_CONFIG = EVALUATION_CONFIGS[surgeryName as keyof typeof EVALUATION_CONFIGS];
 
-    // Define the expected structure of the JSON output from the AI.
-    // This helps ensure the AI's response is consistent and easy to work with.
     const RESPONSE_JSON_SCHEMA = {
       type: "OBJECT",
       properties: {
@@ -224,9 +246,8 @@ async function evaluateTranscriptWithGemini(transcription: string, surgeryName: 
       }
     };
 
-    // This detailed prompt instructs the AI on exactly how to perform the evaluation.
     const prompt = `
-      You are an expert surgical education analyst. Your task is to evaluate a resident's performance during a surgical procedure based on the provided transcript.
+      You are an expert surgical education analyst. Your task is to evaluate a resident's performance during a surgical procedure based on the provided transcript. The transcript includes timestamps and speaker labels.
       
       **Procedure:** ${surgeryName}
       
@@ -247,10 +268,10 @@ async function evaluateTranscriptWithGemini(transcription: string, surgeryName: 
       ${difficultyRating.map(d => `- Level ${d.level}: ${d.description}`).join('\n')}
       
       **Instructions:**
-      1.  Read the entire transcript carefully.
-      2.  For each procedure step, determine the resident's performance score based on the scoring scale.
-      3.  Estimate the time taken for each step based on the conversation flow.
-      4.  Provide specific, constructive comments for each step, quoting the transcript where relevant to justify your assessment.
+      1.  Read the entire transcript carefully, paying attention to the speaker labels and timestamps. Assume 'Speaker 1' is the resident and 'Speaker 2' is the attending surgeon.
+      2.  For each procedure step, determine the resident's performance score based on the scoring scale and the conversation between the speakers.
+      3.  **Calculate the time taken for each step by finding the start and end timestamps of the relevant section in the transcript. The time should be in the format "X minutes Y seconds".**
+      4.  Provide specific, constructive comments for each step, quoting the transcript where relevant to justify your assessment. Use the speaker labels to differentiate between the resident's actions and the attending's guidance.
       5.  Assess the overall case difficulty based on the criteria.
       6.  Write a concise summary in the "additionalComments" field.
       7.  Return your analysis ONLY as a valid JSON object matching the provided schema. Do not include any other text or explanations.
@@ -276,6 +297,6 @@ async function evaluateTranscriptWithGemini(transcription: string, surgeryName: 
     }
 
     const result = await response.json();
-    // The response text is a JSON string, so we need to parse it.
-    return JSON.parse(result.candidates[0].content.parts[0].text);
+    const resultText = result.candidates[0].content.parts[0].text;
+    return JSON.parse(resultText) as EvaluationData;
 }
