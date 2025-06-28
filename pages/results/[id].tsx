@@ -2,11 +2,14 @@
 import { useRouter } from 'next/router';
 import React, { useEffect, useState } from 'react';
 
-// ... (interfaces and EVALUATION_CONFIGS remain the same) ...
+// Interfaces remain the same
 interface EvaluationStep {
   score: number;
   time: string;
   comments: string;
+  attendingScore?: number;
+  attendingComments?: string;
+  attendingTime?: string;
 }
 
 interface ProcedureStep {
@@ -16,13 +19,32 @@ interface ProcedureStep {
 }
 
 interface EvaluationData {
-  [key: string]: EvaluationStep | number | string;
+  [key: string]: EvaluationStep | number | string | boolean | undefined;
   caseDifficulty: number;
   additionalComments: string;
+  attendingCaseDifficulty?: number;
+  attendingAdditionalComments?: string;
   transcription: string;
+  surgery: string;
+  isFinalized?: boolean;
 }
 
-const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[] } } = {
+// Case difficulty descriptions extracted from the provided text
+const difficultyDescriptions = {
+    standard: {
+        1: 'Low Difficulty: Primary, straightforward case with normal anatomy and no prior abdominal or pelvic surgeries. Minimal dissection required; no significant adhesions or anatomical distortion.',
+        2: 'Moderate Difficulty: Case involves mild to moderate adhesions or anatomical variation. May include BMI-related challenges, large hernias, or prior unrelated abdominal surgeries not directly affecting the operative field.',
+        3: 'High Difficulty: Redo or complex case with prior related surgeries (e.g., prior hernia repair, laparotomy). Significant adhesions, distorted anatomy, fibrosis, or other factors requiring advanced dissection and judgment.'
+    },
+    lapAppy: {
+        1: 'Low: Primary, straightforward case with normal anatomy',
+        2: 'Moderate: Mild adhesions or anatomical variation',
+        3: 'High: Dense adhesions, distorted anatomy, prior surgery, or perforated/complicated appendicitis'
+    }
+};
+
+// EVALUATION_CONFIGS updated with case difficulty descriptions
+const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[], caseDifficultyDescriptions: { [key: number]: string } } } = {
     'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)': {
         procedureSteps: [
             { key: 'portPlacement', name: 'Port Placement and Creation of Preperitoneal Space', goalTime: '15-30 minutes' },
@@ -31,6 +53,7 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[] } }
             { key: 'portClosure', name: 'Port Closure', goalTime: '5-10 minutes' },
             { key: 'skinClosure', name: 'Skin Closure', goalTime: '2-5 minutes' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.standard,
     },
     'Laparoscopic Cholecystectomy': {
         procedureSteps: [
@@ -42,6 +65,7 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[] } }
             { key: 'portClosure', name: 'Port Closure', goalTime: '5-10 minutes' },
             { key: 'skinClosure', name: 'Skin Closure', goalTime: '2-5 minutes' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.standard,
     },
     'Robotic Cholecystectomy': {
         procedureSteps: [
@@ -53,6 +77,7 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[] } }
             { key: 'portClosure', name: 'Port Closure', goalTime: '5-10 minutes' },
             { key: 'skinClosure', name: 'Skin Closure', goalTime: '2-5 minutes' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.standard,
     },
     'Robotic Assisted Laparoscopic Inguinal Hernia Repair (TAPP)': {
         procedureSteps: [
@@ -66,6 +91,7 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[] } }
             { key: 'undocking', name: 'Undocking/trocar removal', goalTime: '5-10 minutes' },
             { key: 'skinClosure', name: 'Skin Closure', goalTime: '5-10 minutes' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.standard,
     },
     'Robotic Lap Ventral Hernia Repair (TAPP)': {
         procedureSteps: [
@@ -80,6 +106,7 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[] } }
             { key: 'undocking', name: 'Undocking/trocar removal', goalTime: '5-10 minutes' },
             { key: 'skinClosure', name: 'Skin Closure', goalTime: '5-10 minutes' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.standard,
     },
     'Laparoscopic Appendicectomy': {
         procedureSteps: [
@@ -90,6 +117,7 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[] } }
             { key: 'portClosure', name: 'Port Closure', goalTime: '5-10 minutes' },
             { key: 'skinClosure', name: 'Skin Closure', goalTime: '2-5 minutes' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.lapAppy,
     },
 };
 
@@ -98,6 +126,8 @@ export default function ResultsPage() {
   const router = useRouter();
   const { id } = router.query;
   const [evaluation, setEvaluation] = useState<EvaluationData | null>(null);
+  const [editedEvaluation, setEditedEvaluation] = useState<EvaluationData | null>(null);
+  const [isFinalized, setIsFinalized] = useState(false);
   const [surgery, setSurgery] = useState('');
   const [procedureSteps, setProcedureSteps] = useState<ProcedureStep[]>([]);
   const [showTranscription, setShowTranscription] = useState(false);
@@ -113,7 +143,10 @@ export default function ResultsPage() {
             try {
                 const parsedData = JSON.parse(resultData);
                 setEvaluation(parsedData);
+                // Initialize the editable evaluation state
+                setEditedEvaluation(JSON.parse(JSON.stringify(parsedData))); 
                 setSurgery(parsedData.surgery);
+                setIsFinalized(parsedData.isFinalized || false);
     
                 const config = EVALUATION_CONFIGS[parsedData.surgery as keyof typeof EVALUATION_CONFIGS];
                 if (config) {
@@ -128,14 +161,21 @@ export default function ResultsPage() {
         }
     }
   }, [id, router]);
+
+  const handleFinalize = () => {
+      if (editedEvaluation) {
+        const finalEvaluation = { ...editedEvaluation, isFinalized: true };
+        localStorage.setItem(`evaluation-${id}`, JSON.stringify(finalEvaluation));
+        setIsFinalized(true);
+      }
+  };
   
   const handleSendEmail = async () => {
     if (!email) {
       setEmailMessage('Please enter a valid email address.');
       return;
     }
-    // FIX: Add this check to ensure evaluation is not null
-    if (!evaluation) {
+    if (!editedEvaluation) {
         setEmailMessage('Evaluation data is not available to send.');
         return;
     }
@@ -151,7 +191,7 @@ export default function ResultsPage() {
         body: JSON.stringify({
           to: email,
           surgery: surgery,
-          evaluation: evaluation,
+          evaluation: editedEvaluation,
         }),
       });
 
@@ -161,7 +201,7 @@ export default function ResultsPage() {
         throw new Error(result.message || 'Failed to send email.');
       }
 
-      setEmailMessage(`Email sent! Preview it here: ${result.previewUrl}`);
+      setEmailMessage(`Email sent!`);
       setEmail('');
     } catch (error) {
       console.error(error);
@@ -171,10 +211,24 @@ export default function ResultsPage() {
     }
   };
 
-  // This `if` statement handles all the errors in the JSX below it.
-  // Because the component returns early, TypeScript knows that `evaluation`
-  // cannot be `null` in the code that follows.
-  if (!evaluation) {
+  const handleEvaluationChange = (stepKey: string, field: string, value: any) => {
+    if (editedEvaluation) {
+        const newEvaluation = { ...editedEvaluation };
+        (newEvaluation[stepKey] as EvaluationStep) = {
+            ...(newEvaluation[stepKey] as EvaluationStep),
+            [field]: value,
+        };
+        setEditedEvaluation(newEvaluation);
+    }
+  };
+
+  const handleOverallChange = (field: string, value: any) => {
+    if (editedEvaluation) {
+        setEditedEvaluation({ ...editedEvaluation, [field]: value });
+    }
+  };
+
+  if (!evaluation || !editedEvaluation) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
          <div className="text-center">
@@ -184,12 +238,14 @@ export default function ResultsPage() {
     );
   }
 
+  const descriptions = EVALUATION_CONFIGS[surgery as keyof typeof EVALUATION_CONFIGS]?.caseDifficultyDescriptions;
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-xl">
         <div className="text-center">
             <h1 className="text-4xl font-extrabold text-gray-900 dark:text-white mb-2">
-              AI-Generated Evaluation
+              {isFinalized ? 'Final Evaluation' : 'AI-Generated Evaluation Draft'}
             </h1>
             <p className="text-lg text-gray-500 dark:text-gray-300 mb-8">
               {surgery}
@@ -201,7 +257,10 @@ export default function ResultsPage() {
                 <EvaluationSection 
                     key={step.key}
                     step={step}
-                    data={evaluation[step.key] as EvaluationStep}
+                    aiData={evaluation[step.key] as EvaluationStep}
+                    editedData={editedEvaluation[step.key] as EvaluationStep}
+                    isFinalized={isFinalized}
+                    onChange={(field, value) => handleEvaluationChange(step.key, field, value)}
                 />
             ))}
         </div>
@@ -209,10 +268,41 @@ export default function ResultsPage() {
         <div className="mt-8">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 border-b pb-2 border-gray-200 dark:border-gray-700">Overall Assessment</h2>
             <div className="p-6 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-gray-50 dark:bg-slate-700/50 space-y-4">
-                <p className="text-gray-900 dark:text-white"><strong>Case Difficulty:</strong> <span className="font-bold text-lg text-brand-green">{evaluation.caseDifficulty} / 3</span></p>
+                
+                {descriptions && (
+                    <div className="mt-4">
+                        <h3 className="font-semibold text-lg mb-2 text-gray-900 dark:text-gray-100">Case Difficulty Descriptions:</h3>
+                        <ul className="list-disc list-inside text-gray-700 dark:text-gray-200 space-y-1">
+                            {Object.entries(descriptions).map(([key, value]) => (
+                                <li key={key}><strong>{key}:</strong> {value}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+                
+                <p className="text-gray-900 dark:text-white pt-4"><strong>AI Case Difficulty:</strong> <span className="font-bold text-lg text-brand-green">{evaluation.caseDifficulty} / 3</span></p>
+                <p className="text-gray-700 dark:text-gray-200 leading-relaxed bg-white dark:bg-slate-600 p-4 rounded-md"><strong>AI Final Remarks:</strong> {evaluation.additionalComments}</p>
+
+                <div className="mt-4">
+                    <label className="font-semibold text-lg mb-2 text-gray-900 dark:text-gray-100">Attending Case Difficulty:</label>
+                    <input 
+                        type="number" 
+                        min="1" max="3" 
+                        value={editedEvaluation.attendingCaseDifficulty ?? editedEvaluation.caseDifficulty}
+                        onChange={(e) => handleOverallChange('attendingCaseDifficulty', parseInt(e.target.value))}
+                        disabled={isFinalized}
+                        className="w-full p-2 border rounded-md dark:bg-slate-600 dark:border-gray-500"
+                    />
+                </div>
                 <div>
-                    <h3 className="font-semibold text-lg mb-2 text-gray-900 dark:text-gray-100">Final Remarks:</h3>
-                    <p className="text-gray-700 dark:text-gray-200 leading-relaxed bg-white dark:bg-slate-600 p-4 rounded-md">{evaluation.additionalComments}</p>
+                    <label className="font-semibold text-lg mb-2 text-gray-900 dark:text-gray-100">Attending Final Remarks:</label>
+                    <textarea 
+                        value={editedEvaluation.attendingAdditionalComments ?? editedEvaluation.additionalComments}
+                        onChange={(e) => handleOverallChange('attendingAdditionalComments', e.target.value)}
+                        disabled={isFinalized}
+                        className="w-full p-2 border rounded-md dark:bg-slate-600 dark:border-gray-500"
+                        rows={4}
+                    />
                 </div>
             </div>
         </div>
@@ -236,26 +326,37 @@ export default function ResultsPage() {
           )}
         </div>
         
-        <div className="mt-8">
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 border-b pb-2 border-gray-200 dark:border-gray-700">Share Results</h2>
-            <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4">
-                <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter email address"
-                    className="flex-grow w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-brand-green focus:outline-none"
-                />
-                <button
-                    onClick={handleSendEmail}
-                    disabled={isSending}
-                    className="w-full sm:w-auto bg-brand-green text-white px-6 py-3 rounded-lg shadow-md hover:bg-brand-green-500 transition-colors disabled:bg-gray-400"
-                >
-                    {isSending ? 'Sending...' : 'Send Email'}
-                </button>
+        {!isFinalized && (
+            <button
+                onClick={handleFinalize}
+                className="mt-10 w-full bg-blue-600 text-white px-6 py-3 rounded-lg shadow-md hover:bg-blue-500 transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 text-lg font-semibold"
+            >
+                Finalize Evaluation
+            </button>
+        )}
+
+        {isFinalized && (
+            <div className="mt-8">
+                <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 border-b pb-2 border-gray-200 dark:border-gray-700">Share Results</h2>
+                <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                    <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="Enter email address"
+                        className="flex-grow w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-brand-green focus:outline-none"
+                    />
+                    <button
+                        onClick={handleSendEmail}
+                        disabled={isSending}
+                        className="w-full sm:w-auto bg-brand-green text-white px-6 py-3 rounded-lg shadow-md hover:bg-brand-green-500 transition-colors disabled:bg-gray-400"
+                    >
+                        {isSending ? 'Sending...' : 'Send Email'}
+                    </button>
+                </div>
+                {emailMessage && <p className="text-sm mt-2 text-gray-500 dark:text-gray-400">{emailMessage}</p>}
             </div>
-            {emailMessage && <p className="text-sm mt-2 text-gray-500 dark:text-gray-400">{emailMessage}</p>}
-        </div>
+        )}
 
         <button
           onClick={() => router.push('/')}
@@ -268,40 +369,79 @@ export default function ResultsPage() {
   );
 }
 
-const EvaluationSection = ({ step, data }: { step: ProcedureStep, data: EvaluationStep }) => {
+const EvaluationSection = ({ step, aiData, editedData, isFinalized, onChange }: { step: ProcedureStep, aiData: EvaluationStep, editedData: EvaluationStep, isFinalized: boolean, onChange: (field: string, value: any) => void }) => {
+    const [isManuallyOpened, setIsManuallyOpened] = useState(false);
+    const wasPerformed = aiData && aiData.score > 0;
+
+    if (!wasPerformed && !isManuallyOpened) {
+        return (
+            <div className="p-6 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-white dark:bg-slate-700">
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">{step.name}</h3>
+                <p className="text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-slate-600 p-3 rounded-md mt-1 italic">
+                    {aiData?.comments || "This step was not performed or mentioned in the provided transcript."}
+                </p>
+                {!isFinalized && (
+                    <button 
+                        onClick={() => setIsManuallyOpened(true)}
+                        className="mt-4 bg-gray-200 dark:bg-slate-600 text-gray-800 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-500"
+                    >
+                        Manually Evaluate Step
+                    </button>
+                )}
+            </div>
+        );
+    }
+    
     return (
       <div className="p-6 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-white dark:bg-slate-700 hover:shadow-md transition-shadow">
         <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">{step.name}</h3>
         
-        {data && data.score > 0 ? (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                    <p className="font-medium text-gray-600 dark:text-gray-300">Performance Score:</p>
-                    <p className="text-2xl font-bold text-brand-green">{data.score} / 5</p>
-                </div>
-                <div>
-                    <p className="font-medium text-gray-600 dark:text-gray-300">Goal Time:</p>
-                    <p className="text-lg font-semibold text-gray-800 dark:text-gray-100">{step.goalTime}</p>
-                </div>
-                <div>
-                    <p className="font-medium text-gray-600 dark:text-gray-300">Rough estimate:</p>
-                    <p className="text-lg font-semibold text-gray-800 dark:text-gray-100">{data.time}</p>
-                </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <p className="font-medium text-gray-600 dark:text-gray-300">AI Performance Score:</p>
+                <p className="text-2xl font-bold text-brand-green">{wasPerformed ? `${aiData.score} / 5` : 'N/A'}</p>
             </div>
-            <div className="mt-4">
-                <p className="font-medium text-gray-600 dark:text-gray-300">AI-Generated Comments:</p>
-                <p className="text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-slate-600 p-3 rounded-md mt-1">{data.comments}</p>
+            <div>
+                <label className="font-medium text-gray-600 dark:text-gray-300">Attending Score:</label>
+                <input 
+                    type="number" 
+                    min="0" max="5" 
+                    value={editedData.attendingScore ?? aiData.score}
+                    onChange={(e) => onChange('attendingScore', parseInt(e.target.value))}
+                    disabled={isFinalized}
+                    className="w-full p-2 border rounded-md dark:bg-slate-600 dark:border-gray-500"
+                />
             </div>
-          </>
-        ) : (
-          <div>
+            <div>
+                <p className="font-medium text-gray-600 dark:text-gray-300">Goal Time:</p>
+                <p className="text-lg font-semibold text-gray-800 dark:text-gray-100">{step.goalTime}</p>
+            </div>
+            <div>
+                <label className="font-medium text-gray-600 dark:text-gray-300">Time Taken:</label>
+                <input 
+                    type="text"
+                    placeholder="e.g., 10 minutes 30 seconds"
+                    value={editedData.attendingTime ?? aiData.time}
+                    onChange={(e) => onChange('attendingTime', e.target.value)}
+                    disabled={isFinalized}
+                    className="w-full p-2 border rounded-md dark:bg-slate-600 dark:border-gray-500"
+                />
+            </div>
+        </div>
+        <div className="mt-4">
             <p className="font-medium text-gray-600 dark:text-gray-300">AI-Generated Comments:</p>
-            <p className="text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-slate-600 p-3 rounded-md mt-1 italic">
-              {data && data.comments ? data.comments : "This step was not performed or mentioned in the provided transcript."}
-            </p>
-          </div>
-        )}
+            <p className="text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-slate-600 p-3 rounded-md mt-1">{wasPerformed ? aiData.comments : 'N/A'}</p>
+        </div>
+        <div className="mt-4">
+            <label className="font-medium text-gray-600 dark:text-gray-300">Attending Comments:</label>
+            <textarea 
+                value={editedData.attendingComments ?? ''}
+                onChange={(e) => onChange('attendingComments', e.target.value)}
+                disabled={isFinalized}
+                className="w-full p-2 border rounded-md dark:bg-slate-600 dark:border-gray-500 mt-1"
+                rows={3}
+            />
+        </div>
       </div>
     );
 };

@@ -2,8 +2,20 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import nodemailer from 'nodemailer';
 
-// This configuration is needed to get the names of the procedure steps.
-const EVALUATION_CONFIGS = {
+const difficultyDescriptions = {
+    standard: {
+        1: 'Low Difficulty: Primary, straightforward case with normal anatomy and no prior abdominal or pelvic surgeries. Minimal dissection required; no significant adhesions or anatomical distortion.',
+        2: 'Moderate Difficulty: Case involves mild to moderate adhesions or anatomical variation. May include BMI-related challenges, large hernias, or prior unrelated abdominal surgeries not directly affecting the operative field.',
+        3: 'High Difficulty: Redo or complex case with prior related surgeries (e.g., prior hernia repair, laparotomy). Significant adhesions, distorted anatomy, fibrosis, or other factors requiring advanced dissection and judgment.'
+    },
+    lapAppy: {
+        1: 'Low: Primary, straightforward case with normal anatomy',
+        2: 'Moderate: Mild adhesions or anatomical variation',
+        3: 'High: Dense adhesions, distorted anatomy, prior surgery, or perforated/complicated appendicitis'
+    }
+};
+
+const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: {key: string, name: string}[], caseDifficultyDescriptions: { [key: number]: string } } } = {
     'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)': {
         procedureSteps: [
             { key: 'portPlacement', name: 'Port Placement and Creation of Preperitoneal Space' },
@@ -12,6 +24,7 @@ const EVALUATION_CONFIGS = {
             { key: 'portClosure', name: 'Port Closure' },
             { key: 'skinClosure', name: 'Skin Closure' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.standard,
     },
     'Laparoscopic Cholecystectomy': {
         procedureSteps: [
@@ -23,6 +36,7 @@ const EVALUATION_CONFIGS = {
             { key: 'portClosure', name: 'Port Closure' },
             { key: 'skinClosure', name: 'Skin Closure' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.standard,
     },
     'Robotic Cholecystectomy': {
         procedureSteps: [
@@ -34,6 +48,7 @@ const EVALUATION_CONFIGS = {
             { key: 'portClosure', name: 'Port Closure' },
             { key: 'skinClosure', name: 'Skin Closure' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.standard,
     },
     'Robotic Assisted Laparoscopic Inguinal Hernia Repair (TAPP)': {
         procedureSteps: [
@@ -47,6 +62,7 @@ const EVALUATION_CONFIGS = {
             { key: 'undocking', name: 'Undocking/trocar removal' },
             { key: 'skinClosure', name: 'Skin Closure' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.standard,
     },
     'Robotic Lap Ventral Hernia Repair (TAPP)': {
         procedureSteps: [
@@ -61,6 +77,7 @@ const EVALUATION_CONFIGS = {
             { key: 'undocking', name: 'Undocking/trocar removal' },
             { key: 'skinClosure', name: 'Skin Closure' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.standard,
     },
     'Laparoscopic Appendicectomy': {
         procedureSteps: [
@@ -71,6 +88,7 @@ const EVALUATION_CONFIGS = {
             { key: 'portClosure', name: 'Port Closure' },
             { key: 'skinClosure', name: 'Skin Closure' },
         ],
+        caseDifficultyDescriptions: difficultyDescriptions.lapAppy,
     },
 };
 
@@ -80,32 +98,44 @@ const createEmailHtml = (surgery: string, evaluation: any) => {
 
   const stepsHtml = config.procedureSteps.map(step => {
     const data = evaluation[step.key];
-    if (!data || data.score === 0) {
+    const attendingScore = data.attendingScore ?? data.score;
+    
+    if (!data || attendingScore === 0) {
       return `
         <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #eee; border-radius: 5px;">
           <h4 style="margin-top: 0; font-size: 16px;">${step.name}</h4>
-          <p style="color: #666; font-style: italic;">${data?.comments || 'This step was not performed or mentioned in the provided transcript.'}</p>
+          <p style="color: #666; font-style: italic;">${data?.attendingComments || data?.comments || 'This step was not performed or mentioned.'}</p>
         </div>
       `;
     }
     return `
       <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #eee; border-radius: 5px;">
         <h4 style="margin-top: 0; font-size: 16px;">${step.name}</h4>
-        <p><strong>Performance Score:</strong> ${data.score} / 5</p>
-        <p><strong>Estimated Time:</strong> ${data.time}</p>
+        <p><strong>AI Performance Score:</strong> ${data.score > 0 ? `${data.score} / 5` : 'N/A'}</p>
+        <p><strong>Attending Performance Score:</strong> ${attendingScore} / 5</p>
+        <p><strong>Time Taken:</strong> ${data.attendingTime ?? data.time}</p>
         <p><strong>AI Comments:</strong> ${data.comments}</p>
+        ${data.attendingComments ? `<p><strong>Attending Comments:</strong> ${data.attendingComments}</p>` : ''}
       </div>
     `;
   }).join('');
 
+  const descriptionsHtml = Object.entries(config.caseDifficultyDescriptions).map(([key, value]) => `<li><strong>${key}:</strong> ${value}</li>`).join('');
+
   return `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px;">
-      <h1 style="font-size: 24px; color: #1a202c; text-align: center;">AI-Generated Evaluation</h1>
+      <h1 style="font-size: 24px; color: #1a202c; text-align: center;">Final Evaluation Report</h1>
       <h2 style="font-size: 20px; color: #2d3748; text-align: center; border-bottom: 1px solid #eee; padding-bottom: 10px;">${surgery}</h2>
       
       <h3 style="font-size: 18px; color: #2d3748; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px;">Overall Assessment</h3>
-      <p><strong>Case Difficulty:</strong> ${evaluation.caseDifficulty} / 3</p>
-      <p><strong>Final Remarks:</strong> ${evaluation.additionalComments}</p>
+      <div style="margin-bottom: 20px;">
+        <h4 style="margin-top: 0; font-size: 16px;">Case Difficulty Descriptions:</h4>
+        <ul style="list-style-position: inside; padding-left: 0;">${descriptionsHtml}</ul>
+      </div>
+      <p><strong>AI Case Difficulty:</strong> ${evaluation.caseDifficulty} / 3</p>
+      <p><strong>Attending Case Difficulty:</strong> ${evaluation.attendingCaseDifficulty ?? evaluation.caseDifficulty} / 3</p>
+      <p><strong>AI Final Remarks:</strong> ${evaluation.additionalComments}</p>
+      <p><strong>Attending Final Remarks:</strong> ${evaluation.attendingAdditionalComments ?? evaluation.additionalComments}</p>
 
       <h3 style="font-size: 18px; color: #2d3748; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px;">Procedure Step Evaluation</h3>
       ${stepsHtml}
@@ -124,10 +154,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const { to, surgery, evaluation } = req.body;
-  const subject = `Evaluation Results for ${surgery}`;
+  const subject = `Final Evaluation Results for ${surgery}`;
   const html = createEmailHtml(surgery, evaluation);
   
-  // This uses your real email credentials from the .env.local file
   const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port: Number(process.env.EMAIL_PORT),
