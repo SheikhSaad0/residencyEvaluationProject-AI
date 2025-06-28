@@ -2,7 +2,7 @@
 import { useRouter } from 'next/router';
 import React, { useEffect, useState } from 'react';
 
-// ... (keep your existing interfaces and EVALUATION_CONFIGS)
+// ... (interfaces and EVALUATION_CONFIGS remain the same) ...
 interface EvaluationStep {
   score: number;
   time: string;
@@ -93,6 +93,7 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[] } }
     },
 };
 
+
 export default function ResultsPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -133,6 +134,11 @@ export default function ResultsPage() {
       setEmailMessage('Please enter a valid email address.');
       return;
     }
+    // FIX: Add this check to ensure evaluation is not null
+    if (!evaluation) {
+        setEmailMessage('Evaluation data is not available to send.');
+        return;
+    }
     setIsSending(true);
     setEmailMessage('');
 
@@ -144,27 +150,30 @@ export default function ResultsPage() {
         },
         body: JSON.stringify({
           to: email,
-          subject: `Evaluation Results for ${surgery}`,
-          // You can create a more elaborate HTML body for the email
-          html: `<p>Here are the evaluation results for ${surgery}.</p>
-                 <pre>${JSON.stringify(evaluation, null, 2)}</pre>`,
+          surgery: surgery,
+          evaluation: evaluation,
         }),
       });
 
+      const result = await response.json();
+
       if (!response.ok) {
-        throw new Error('Failed to send email.');
+        throw new Error(result.message || 'Failed to send email.');
       }
 
-      setEmailMessage(`Evaluation results sent to ${email}`);
+      setEmailMessage(`Email sent! Preview it here: ${result.previewUrl}`);
       setEmail('');
     } catch (error) {
       console.error(error);
-      setEmailMessage('An error occurred while sending the email.');
+      setEmailMessage(`An error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSending(false);
     }
   };
 
+  // This `if` statement handles all the errors in the JSX below it.
+  // Because the component returns early, TypeScript knows that `evaluation`
+  // cannot be `null` in the code that follows.
   if (!evaluation) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
