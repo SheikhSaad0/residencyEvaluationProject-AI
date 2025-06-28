@@ -185,6 +185,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const subject = `Final Evaluation Results for ${residentName || 'Resident'} - ${surgery}`;
   const html = createEmailHtml(surgery, evaluation, residentName, additionalContext);
   
+  // Moved transporter creation inside the handler to avoid build-time errors
   const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port: Number(process.env.EMAIL_PORT),
