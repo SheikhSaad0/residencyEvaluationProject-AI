@@ -3,86 +3,101 @@ import formidable from 'formidable';
 import { createClient, DeepgramError } from '@deepgram/sdk';
 import fs from 'fs';
 
+// Define a type for a single step in the evaluation config
+interface ProcedureStepConfig {
+    key: string;
+    name: string;
+}
+
+// Define the structure of the evaluation for a single procedure step
 interface EvaluationStep {
   score: number;
   time: string;
   comments: string;
 }
 
-interface EvaluationData {
+// This interface will hold the result from the Gemini evaluation.
+// It uses an index signature to allow for dynamic property names based on procedure steps.
+interface GeminiEvaluationResult {
   [key: string]: EvaluationStep | number | string;
   caseDifficulty: number;
   additionalComments: string;
-  transcription: string;
 }
 
-const EVALUATION_CONFIGS = {
+// Define the main configuration object structure
+interface EvaluationConfigs {
+    [key: string]: {
+        procedureSteps: ProcedureStepConfig[];
+    };
+}
+
+const EVALUATION_CONFIGS: EvaluationConfigs = {
     'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)': {
         procedureSteps: [
-            { key: 'portPlacement', name: 'Port Placement and Creation of Preperitoneal Space', goalTime: '15-30 minutes' },
-            { key: 'herniaDissection', name: 'Hernia Sac Reduction and Dissection of Hernia Space', goalTime: '15-30 minutes' },
-            { key: 'meshPlacement', name: 'Mesh Placement', goalTime: '10-15 minutes' },
-            { key: 'portClosure', name: 'Port Closure', goalTime: '5-10 minutes' },
-            { key: 'skinClosure', name: 'Skin Closure', goalTime: '2-5 minutes' },
+            { key: 'portPlacement', name: 'Port Placement and Creation of Preperitoneal Space' },
+            { key: 'herniaDissection', name: 'Hernia Sac Reduction and Dissection of Hernia Space' },
+            { key: 'meshPlacement', name: 'Mesh Placement' },
+            { key: 'portClosure', name: 'Port Closure' },
+            { key: 'skinClosure', name: 'Skin Closure' },
         ],
     },
     'Laparoscopic Cholecystectomy': {
         procedureSteps: [
-            { key: 'portPlacement', name: 'Port Placement', goalTime: '5-10 minutes' },
-            { key: 'calotTriangleDissection', name: "Dissection of Calot's Triangle", goalTime: '10-25 minutes' },
-            { key: 'cysticArteryDuctClipping', name: 'Clipping and division of Cystic Artery and Duct', goalTime: '5-10 minutes' },
-            { key: 'gallbladderDissection', name: 'Gallbladder Dissection of the Liver', goalTime: '10-20 minutes' },
-            { key: 'specimenRemoval', name: 'Specimen removal', goalTime: '5-10 minutes' },
-            { key: 'portClosure', name: 'Port Closure', goalTime: '5-10 minutes' },
-            { key: 'skinClosure', name: 'Skin Closure', goalTime: '2-5 minutes' },
+            { key: 'portPlacement', name: 'Port Placement' },
+            { key: 'calotTriangleDissection', name: "Dissection of Calot's Triangle" },
+            { key: 'cysticArteryDuctClipping', name: 'Clipping and division of Cystic Artery and Duct' },
+            { key: 'gallbladderDissection', name: 'Gallbladder Dissection of the Liver' },
+            { key: 'specimenRemoval', name: 'Specimen removal' },
+            { key: 'portClosure', name: 'Port Closure' },
+            { key: 'skinClosure', name: 'Skin Closure' },
         ],
     },
     'Robotic Cholecystectomy': {
         procedureSteps: [
-            { key: 'portPlacement', name: 'Port Placement', goalTime: '5-10 minutes' },
-            { key: 'calotTriangleDissection', name: "Dissection of Calot's Triangle", goalTime: '10-25 minutes' },
-            { key: 'cysticArteryDuctClipping', name: 'Clipping and division of Cystic Artery and Duct', goalTime: '5-10 minutes' },
-            { key: 'gallbladderDissection', name: 'Gallbladder Dissection of the Liver', goalTime: '10-20 minutes' },
-            { key: 'specimenRemoval', name: 'Specimen removal', goalTime: '5-10 minutes' },
-            { key: 'portClosure', name: 'Port Closure', goalTime: '5-10 minutes' },
-            { key: 'skinClosure', name: 'Skin Closure', goalTime: '2-5 minutes' },
+            { key: 'portPlacement', name: 'Port Placement' },
+            { key: 'calotTriangleDissection', name: "Dissection of Calot's Triangle" },
+            { key: 'cysticArteryDuctClipping', name: 'Clipping and division of Cystic Artery and Duct' },
+            { key: 'gallbladderDissection', name: 'Gallbladder Dissection of the Liver' },
+            { key: 'specimenRemoval', name: 'Specimen removal' },
+            { key: 'portClosure', name: 'Port Closure' },
+            { key: 'skinClosure', name: 'Skin Closure' },
         ],
     },
     'Robotic Assisted Laparoscopic Inguinal Hernia Repair (TAPP)': {
         procedureSteps: [
-            { key: 'portPlacement', name: 'Port Placement', goalTime: '5-10 minutes' },
-            { key: 'robotDocking', name: 'Docking the robot', goalTime: '5-15 minutes' },
-            { key: 'instrumentPlacement', name: 'Instrument Placement', goalTime: '2-5 minutes' },
-            { key: 'herniaReduction', name: 'Reduction of Hernia', goalTime: '10-20 minutes' },
-            { key: 'flapCreation', name: 'Flap Creation', goalTime: '20-40 minutes' },
-            { key: 'meshPlacement', name: 'Mesh Placement/Fixation', goalTime: '15-30 minutes' },
-            { key: 'flapClosure', name: 'Flap Closure', goalTime: '10-20 minutes' },
-            { key: 'undocking', name: 'Undocking/trocar removal', goalTime: '5-10 minutes' },
-            { key: 'skinClosure', name: 'Skin Closure', goalTime: '5-10 minutes' },
+            { key: 'portPlacement', name: 'Port Placement' },
+            { key: 'robotDocking', name: 'Docking the robot' },
+            { key: 'instrumentPlacement', name: 'Instrument Placement' },
+            { key: 'herniaReduction', name: 'Reduction of Hernia' },
+            { key: 'flapCreation', name: 'Flap Creation' },
+            { key: 'meshPlacement', name: 'Mesh Placement/Fixation' },
+            { key: 'flapClosure', name: 'Flap Closure' },
+            { key: 'undocking', name: 'Undocking/trocar removal' },
+            { key: 'skinClosure', name: 'Skin Closure' },
         ],
     },
     'Robotic Lap Ventral Hernia Repair (TAPP)': {
         procedureSteps: [
-            { key: 'portPlacement', name: 'Port Placement', goalTime: '5-10 minutes' },
-            { key: 'robotDocking', name: 'Docking the robot', goalTime: '5-15 minutes' },
-            { key: 'instrumentPlacement', name: 'Instrument Placement', goalTime: '2-5 minutes' },
-            { key: 'herniaReduction', name: 'Reduction of Hernia', goalTime: '10-20 minutes' },
-            { key: 'flapCreation', name: 'Flap Creation', goalTime: '20-40 minutes' },
-            { key: 'herniaClosure', name: 'Hernia Closure', goalTime: '10-20 minutes' },
-            { key: 'meshPlacement', name: 'Mesh Placement/Fixation', goalTime: '15-30 minutes' },
-            { key: 'flapClosure', name: 'Flap Closure', goalTime: '10-20 minutes' },
-            { key: 'undocking', name: 'Undocking/trocar removal', goalTime: '5-10 minutes' },
-            { key: 'skinClosure', name: 'Skin Closure', goalTime: '5-10 minutes' },
+            { key: 'portPlacement', name: 'Port Placement' },
+            { key: 'robotDocking', name: 'Docking the robot' },
+            { key: 'instrumentPlacement', name: 'Instrument Placement' },
+            { key: 'herniaReduction', name: 'Reduction of Hernia' },
+            { key: 'flapCreation', name: 'Flap Creation' },
+            { key: 'herniaClosure', name: 'Hernia Closure' },
+            { key: 'meshPlacement', name: 'Mesh Placement/Fixation' },
+            { key: 'flapClosure', name: 'Flap Closure' },
+            { key: 'undocking', name: 'Undocking/trocar removal' },
+            { key: 'skinClosure', name: 'Skin Closure' },
         ],
     },
     'Laparoscopic Appendicectomy': {
         procedureSteps: [
-            { key: 'portPlacement', name: 'Port Placement', goalTime: '5-10 minutes' },
-            { key: 'appendixDissection', name: 'Identification, Dissection & Exposure of Appendix', goalTime: '10-20 minutes' },
-            { key: 'mesoappendixDivision', name: 'Division of Mesoappendix and Appendix Base', goalTime: '5-10 minutes' },
-            { key: 'specimenExtraction', name: 'Specimen Extraction', goalTime: '2-5 minutes' },
-            { key: 'portClosure', name: 'Port Closure', goalTime: '5-10 minutes' },
-            { key: 'skinClosure', name: 'Skin Closure', goalTime: '2-5 minutes' },
+            { key: 'portPlacement', name: 'Port Placement' },
+            { key: 'appendixDissection', name: 'Identification, Dissection & Exposure of Appendix' },
+            { key: 'mesoappendixDivision', name: 'Division of Mesoappendix and Appendix Base' },
+            { key: 'specimenExtraction', name: 'Specimen Extraction' },
+            { key: 'portClosure', name: 'Port Closure' },
+            { key: 'skinClosure', name: 'Skin Closure' },
         ],
     },
 };
@@ -188,7 +203,17 @@ async function transcribeWithDeepgram(audioFile: formidable.File): Promise<strin
     return transcriptText;
 }
 
-async function evaluateTranscriptWithGemini(transcription: string, surgeryName: string, additionalContext: string): Promise<any> {
+// Define the type for the accumulator in the reduce function
+interface SchemaProperties {
+    [key: string]: {
+        type: string;
+        properties?: {
+            [key: string]: { type: string };
+        };
+    };
+}
+
+async function evaluateTranscriptWithGemini(transcription: string, surgeryName: string, additionalContext: string): Promise<GeminiEvaluationResult> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY environment variable not set.");
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
@@ -198,7 +223,7 @@ async function evaluateTranscriptWithGemini(transcription: string, surgeryName: 
     const RESPONSE_JSON_SCHEMA = {
         type: "OBJECT",
         properties: {
-            ...EVALUATION_CONFIG.procedureSteps.reduce((acc: any, step: any) => {
+            ...EVALUATION_CONFIG.procedureSteps.reduce((acc: SchemaProperties, step: ProcedureStepConfig) => {
                 acc[step.key] = {
                     type: "OBJECT",
                     properties: {
@@ -273,5 +298,5 @@ async function evaluateTranscriptWithGemini(transcription: string, surgeryName: 
 
     const result = await response.json();
     const resultText = result.candidates[0].content.parts[0].text;
-    return JSON.parse(resultText);
+    return JSON.parse(resultText) as GeminiEvaluationResult;
 }
