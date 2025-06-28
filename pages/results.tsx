@@ -1,8 +1,6 @@
 import { useRouter } from 'next/router';
 import React, { useEffect, useState } from 'react';
 
-// Define a type for our evaluation data for better type safety
-// This should match the JSON structure returned by the /api/analyze endpoint
 interface EvaluationStep {
   score: number;
   time: string;
@@ -16,9 +14,6 @@ interface EvaluationData {
   transcription: string;
 }
 
-// We need a way to get the procedure steps on the client-side
-// For simplicity, we'll redefine the configs here.
-// In a larger app, this might come from a shared file or a context.
 const EVALUATION_CONFIGS = {
     'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)': {
         procedureSteps: [
@@ -90,7 +85,6 @@ const EVALUATION_CONFIGS = {
     },
 };
 
-
 export default function ResultsPage() {
   const router = useRouter();
   const [evaluation, setEvaluation] = useState<EvaluationData | null>(null);
@@ -98,7 +92,6 @@ export default function ResultsPage() {
   const [procedureSteps, setProcedureSteps] = useState<{key: string, name: string}[]>([]);
 
   useEffect(() => {
-    // Retrieve data from session storage on component mount
     const resultData = sessionStorage.getItem('analysisResult');
     const surgeryName = sessionStorage.getItem('selectedSurgery');
 
@@ -110,8 +103,6 @@ export default function ResultsPage() {
         setProcedureSteps(config.procedureSteps);
       }
     } else {
-      // If no data is found, redirect back to the home page
-      // This prevents users from accessing the page directly
       router.push('/');
     }
   }, [router]);
@@ -138,8 +129,6 @@ export default function ResultsPage() {
             </p>
         </div>
 
-
-        {/* Evaluation Details Sections */}
         <div className="space-y-6">
             {procedureSteps.map((step) => (
                 <EvaluationSection 
@@ -150,7 +139,6 @@ export default function ResultsPage() {
             ))}
         </div>
 
-        {/* Case Difficulty and Additional Comments */}
         <div className="mt-8">
             <h2 className="text-3xl font-bold text-gray-800 mb-4 border-b pb-2">Overall Assessment</h2>
             <div className="p-6 border border-gray-200 rounded-lg shadow-sm bg-gray-50 space-y-4">
@@ -162,21 +150,20 @@ export default function ResultsPage() {
             </div>
         </div>
 
-
-        {/* Full Transcription */}
         <div className="mt-8">
           <h2 className="text-3xl font-bold text-gray-800 mb-4 border-b pb-2">Full Transcription</h2>
           <div className="p-4 border border-gray-200 rounded-lg bg-gray-50 max-h-72 overflow-y-auto">
-            <p className="text-gray-600 whitespace-pre-wrap font-mono text-sm">{evaluation.transcription}</p>
+            {evaluation.transcription && evaluation.transcription.trim() !== '' ? (
+              <p className="text-gray-600 whitespace-pre-wrap font-mono text-sm">{evaluation.transcription}</p>
+            ) : (
+              <p className="text-gray-500">Full transcription is not available.</p>
+            )}
           </div>
         </div>
 
-
         <button
           onClick={() => router.push('/')}
-          className="mt-10 w-full bg-gray-600 text-white px-6 py-4 rounded-lg shadow-md
-                     hover:bg-gray-700 transition-all duration-200 ease-in-out
-                     focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 text-lg font-semibold"
+          className="mt-10 w-full bg-gray-600 text-white px-6 py-4 rounded-lg shadow-md hover:bg-gray-700 transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 text-lg font-semibold"
         >
           Evaluate Another Procedure
         </button>
@@ -185,11 +172,20 @@ export default function ResultsPage() {
   );
 }
 
-// Helper component to render each section of the evaluation, keeping the main component clean
 const EvaluationSection = ({ title, data }: { title: string; data: EvaluationStep }) => {
     if (!data) {
         return null;
     }
+
+    if (data.score === 0) {
+        return (
+            <div className="p-6 border border-gray-200 rounded-lg shadow-sm bg-gray-50">
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">{title}</h3>
+                <p className="text-gray-500 italic">{data.comments}</p>
+            </div>
+        );
+    }
+
     return (
       <div className="p-6 border border-gray-200 rounded-lg shadow-sm bg-white hover:shadow-md transition-shadow">
         <h3 className="text-xl font-semibold text-gray-800 mb-4">{title}</h3>

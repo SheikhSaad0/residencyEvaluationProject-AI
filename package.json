@@ -9,11 +9,9 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@google-cloud/language": "^7.1.0",
-    "@google-cloud/speech": "^7.1.0",
-    "@google-cloud/storage": "^7.16.0",
     "@types/formidable": "^3.4.5",
-    "formidable": "^3.5.4",
+    "assemblyai": "^4.4.1",
+    "formidable": "^3.5.1",
     "next": "15.3.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
