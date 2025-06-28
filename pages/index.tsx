@@ -1,6 +1,13 @@
-import { useState } from 'react';
+// pages/index.tsx
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import SurgerySelector from '../components/SurgerySelector'; // Make sure this path is correct!
+import SurgerySelector from '../components/SurgerySelector'; 
+
+interface PastEvaluation {
+  id: string;
+  surgery: string;
+  date: string;
+}
 
 export default function Home() {
   const [selectedSurgery, setSelectedSurgery] = useState('');
@@ -9,7 +16,28 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressStep, setProgressStep] = useState('');
+  const [pastEvaluations, setPastEvaluations] = useState<PastEvaluation[]>([]);
   const router = useRouter();
+
+  useEffect(() => {
+    const keys = Object.keys(localStorage).filter(key => key.startsWith('evaluation-'));
+    const evaluations: PastEvaluation[] = keys.map(key => {
+        const id = key.replace('evaluation-', '');
+        try {
+            const data = JSON.parse(localStorage.getItem(key) || '{}');
+            return { 
+                id, 
+                surgery: data.surgery, 
+                date: new Date(parseInt(id, 10)).toLocaleString() 
+            };
+        } catch (e) {
+            return null;
+        }
+    }).filter((item): item is PastEvaluation => item !== null)
+      .sort((a, b) => parseInt(b.id, 10) - parseInt(a.id, 10)); // Sort by newest first
+      
+    setPastEvaluations(evaluations);
+  }, []);
 
   const handleSubmit = async () => {
     if (!selectedSurgery || !file) {
@@ -49,10 +77,13 @@ export default function Home() {
       setProgress(100);
       setProgressStep('Analysis complete!');
 
-      sessionStorage.setItem('analysisResult', JSON.stringify(analysisResult));
-      sessionStorage.setItem('selectedSurgery', selectedSurgery);
+      const id = Date.now().toString();
+      localStorage.setItem(`evaluation-${id}`, JSON.stringify({
+        ...analysisResult,
+        surgery: selectedSurgery,
+      }));
 
-      router.push('/results');
+      router.push(`/results/${id}`);
     } catch (error) {
       console.error('Error during analysis:', error);
       setError(error instanceof Error ? error.message : 'An unknown error occurred.');
@@ -129,6 +160,26 @@ export default function Home() {
                 style={{ width: `${progress}%` }}
               ></div>
             </div>
+          </div>
+        )}
+
+        {pastEvaluations.length > 0 && (
+          <div className="mt-10">
+            <details>
+              <summary className="text-lg font-semibold text-gray-700 dark:text-gray-300 cursor-pointer">
+                Past Evaluations
+              </summary>
+              <ul className="mt-4 space-y-2">
+                {pastEvaluations.map(evalItem => (
+                  <li key={evalItem.id} className="p-2 border rounded-md dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-slate-700">
+                    <a href={`/results/${evalItem.id}`} className="flex justify-between">
+                      <span>{evalItem.surgery}</span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">{evalItem.date}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
           </div>
         )}
       </div>

@@ -1,7 +1,8 @@
+// pages/results/[id].tsx
 import { useRouter } from 'next/router';
 import React, { useEffect, useState } from 'react';
 
-// ... (interfaces and EVALUATION_CONFIGS remain the same as the previous step) ...
+// ... (keep your existing interfaces and EVALUATION_CONFIGS)
 interface EvaluationStep {
   score: number;
   time: string;
@@ -92,9 +93,9 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[] } }
     },
 };
 
-
 export default function ResultsPage() {
   const router = useRouter();
+  const { id } = router.query;
   const [evaluation, setEvaluation] = useState<EvaluationData | null>(null);
   const [surgery, setSurgery] = useState('');
   const [procedureSteps, setProcedureSteps] = useState<ProcedureStep[]>([]);
@@ -105,28 +106,27 @@ export default function ResultsPage() {
 
 
   useEffect(() => {
-    const resultData = sessionStorage.getItem('analysisResult');
-    const surgeryName = sessionStorage.getItem('selectedSurgery');
-
-    if (resultData && surgeryName) {
-      const parsedData = JSON.parse(resultData);
-      setEvaluation(parsedData);
-      setSurgery(surgeryName);
-      
-      try {
-        localStorage.setItem(`evaluation-${Date.now()}`, JSON.stringify({ surgery: surgeryName, ...parsedData }));
-      } catch (error) {
-        console.error("Could not save to local storage", error);
-      }
-
-      const config = EVALUATION_CONFIGS[surgeryName as keyof typeof EVALUATION_CONFIGS];
-      if(config) {
-        setProcedureSteps(config.procedureSteps);
-      }
-    } else {
-      router.push('/');
+    if (id) {
+        const resultData = localStorage.getItem(`evaluation-${id}`);
+        if (resultData) {
+            try {
+                const parsedData = JSON.parse(resultData);
+                setEvaluation(parsedData);
+                setSurgery(parsedData.surgery);
+    
+                const config = EVALUATION_CONFIGS[parsedData.surgery as keyof typeof EVALUATION_CONFIGS];
+                if (config) {
+                    setProcedureSteps(config.procedureSteps);
+                }
+            } catch (error) {
+                console.error("Failed to parse evaluation data from localStorage", error);
+                router.push('/');
+            }
+        } else {
+            router.push('/');
+        }
     }
-  }, [router]);
+  }, [id, router]);
   
   const handleSendEmail = async () => {
     if (!email) {
@@ -135,11 +135,34 @@ export default function ResultsPage() {
     }
     setIsSending(true);
     setEmailMessage('');
-    setTimeout(() => {
-        setIsSending(false);
-        setEmailMessage(`Evaluation results sent to ${email}`);
-        setEmail('');
-    }, 1000);
+
+    try {
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: email,
+          subject: `Evaluation Results for ${surgery}`,
+          // You can create a more elaborate HTML body for the email
+          html: `<p>Here are the evaluation results for ${surgery}.</p>
+                 <pre>${JSON.stringify(evaluation, null, 2)}</pre>`,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to send email.');
+      }
+
+      setEmailMessage(`Evaluation results sent to ${email}`);
+      setEmail('');
+    } catch (error) {
+      console.error(error);
+      setEmailMessage('An error occurred while sending the email.');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   if (!evaluation) {
@@ -266,7 +289,7 @@ const EvaluationSection = ({ step, data }: { step: ProcedureStep, data: Evaluati
           <div>
             <p className="font-medium text-gray-600 dark:text-gray-300">AI-Generated Comments:</p>
             <p className="text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-slate-600 p-3 rounded-md mt-1 italic">
-              {data ? data.comments : "This step was not performed or mentioned in the provided transcript."}
+              {data && data.comments ? data.comments : "This step was not performed or mentioned in the provided transcript."}
             </p>
           </div>
         )}
