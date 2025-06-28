@@ -1,8 +1,6 @@
-// pages/results/[id].tsx
 import { useRouter } from 'next/router';
 import React, { useEffect, useState } from 'react';
 
-// Interfaces remain the same
 interface EvaluationStep {
   score: number;
   time: string;
@@ -26,10 +24,11 @@ interface EvaluationData {
   attendingAdditionalComments?: string;
   transcription: string;
   surgery: string;
+  residentName?: string;
+  additionalContext?: string;
   isFinalized?: boolean;
 }
 
-// Case difficulty descriptions extracted from the provided text
 const difficultyDescriptions = {
     standard: {
         1: 'Low Difficulty: Primary, straightforward case with normal anatomy and no prior abdominal or pelvic surgeries. Minimal dissection required; no significant adhesions or anatomical distortion.',
@@ -43,7 +42,6 @@ const difficultyDescriptions = {
     }
 };
 
-// EVALUATION_CONFIGS updated with case difficulty descriptions
 const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[], caseDifficultyDescriptions: { [key: number]: string } } } = {
     'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)': {
         procedureSteps: [
@@ -121,7 +119,6 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: ProcedureStep[], ca
     },
 };
 
-
 export default function ResultsPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -129,6 +126,8 @@ export default function ResultsPage() {
   const [editedEvaluation, setEditedEvaluation] = useState<EvaluationData | null>(null);
   const [isFinalized, setIsFinalized] = useState(false);
   const [surgery, setSurgery] = useState('');
+  const [residentName, setResidentName] = useState('');
+  const [additionalContext, setAdditionalContext] = useState('');
   const [procedureSteps, setProcedureSteps] = useState<ProcedureStep[]>([]);
   const [showTranscription, setShowTranscription] = useState(false);
   const [email, setEmail] = useState('');
@@ -143,9 +142,10 @@ export default function ResultsPage() {
             try {
                 const parsedData = JSON.parse(resultData);
                 setEvaluation(parsedData);
-                // Initialize the editable evaluation state
                 setEditedEvaluation(JSON.parse(JSON.stringify(parsedData))); 
                 setSurgery(parsedData.surgery);
+                setResidentName(parsedData.residentName || '');
+                setAdditionalContext(parsedData.additionalContext || '');
                 setIsFinalized(parsedData.isFinalized || false);
     
                 const config = EVALUATION_CONFIGS[parsedData.surgery as keyof typeof EVALUATION_CONFIGS];
@@ -192,6 +192,8 @@ export default function ResultsPage() {
           to: email,
           surgery: surgery,
           evaluation: editedEvaluation,
+          residentName: residentName,
+          additionalContext: additionalContext,
         }),
       });
 
@@ -247,9 +249,10 @@ export default function ResultsPage() {
             <h1 className="text-4xl font-extrabold text-gray-900 dark:text-white mb-2">
               {isFinalized ? 'Final Evaluation' : 'AI-Generated Evaluation Draft'}
             </h1>
-            <p className="text-lg text-gray-500 dark:text-gray-300 mb-8">
+            <p className="text-lg text-gray-500 dark:text-gray-300 mb-1">
               {surgery}
             </p>
+            {residentName && <p className="text-lg font-semibold text-gray-600 dark:text-gray-400 mb-8">Resident: {residentName}</p>}
         </div>
 
         <div className="space-y-6">
@@ -269,6 +272,13 @@ export default function ResultsPage() {
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 border-b pb-2 border-gray-200 dark:border-gray-700">Overall Assessment</h2>
             <div className="p-6 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-gray-50 dark:bg-slate-700/50 space-y-4">
                 
+                {additionalContext && (
+                    <div>
+                        <h4 className="font-semibold text-lg mb-2 text-gray-900 dark:text-gray-100">Provided Context:</h4>
+                        <p className="text-gray-700 dark:text-gray-200 bg-white dark:bg-slate-600 p-4 rounded-md italic">{additionalContext}</p>
+                    </div>
+                )}
+
                 {descriptions && (
                     <div className="mt-4">
                         <h3 className="font-semibold text-lg mb-2 text-gray-900 dark:text-gray-100">Case Difficulty Descriptions:</h3>
@@ -288,8 +298,9 @@ export default function ResultsPage() {
                     <input 
                         type="number" 
                         min="1" max="3" 
-                        value={editedEvaluation.attendingCaseDifficulty ?? editedEvaluation.caseDifficulty}
-                        onChange={(e) => handleOverallChange('attendingCaseDifficulty', parseInt(e.target.value))}
+                        value={editedEvaluation.attendingCaseDifficulty ?? ''}
+                        placeholder={evaluation.caseDifficulty?.toString()}
+                        onChange={(e) => handleOverallChange('attendingCaseDifficulty', e.target.value ? parseInt(e.target.value) : undefined)}
                         disabled={isFinalized}
                         className="w-full p-2 border rounded-md dark:bg-slate-600 dark:border-gray-500"
                     />
@@ -297,7 +308,8 @@ export default function ResultsPage() {
                 <div>
                     <label className="font-semibold text-lg mb-2 text-gray-900 dark:text-gray-100">Attending Final Remarks:</label>
                     <textarea 
-                        value={editedEvaluation.attendingAdditionalComments ?? editedEvaluation.additionalComments}
+                        value={editedEvaluation.attendingAdditionalComments ?? ''}
+                        placeholder={evaluation.additionalComments}
                         onChange={(e) => handleOverallChange('attendingAdditionalComments', e.target.value)}
                         disabled={isFinalized}
                         className="w-full p-2 border rounded-md dark:bg-slate-600 dark:border-gray-500"
@@ -406,8 +418,9 @@ const EvaluationSection = ({ step, aiData, editedData, isFinalized, onChange }: 
                 <input 
                     type="number" 
                     min="0" max="5" 
-                    value={editedData.attendingScore ?? aiData.score}
-                    onChange={(e) => onChange('attendingScore', parseInt(e.target.value))}
+                    value={editedData.attendingScore ?? ''}
+                    placeholder={aiData.score > 0 ? aiData.score.toString() : '0'}
+                    onChange={(e) => onChange('attendingScore', e.target.value ? parseInt(e.target.value) : undefined)}
                     disabled={isFinalized}
                     className="w-full p-2 border rounded-md dark:bg-slate-600 dark:border-gray-500"
                 />
@@ -420,8 +433,8 @@ const EvaluationSection = ({ step, aiData, editedData, isFinalized, onChange }: 
                 <label className="font-medium text-gray-600 dark:text-gray-300">Time Taken:</label>
                 <input 
                     type="text"
-                    placeholder="e.g., 10 minutes 30 seconds"
-                    value={editedData.attendingTime ?? aiData.time}
+                    value={editedData.attendingTime ?? ''}
+                    placeholder={aiData.time}
                     onChange={(e) => onChange('attendingTime', e.target.value)}
                     disabled={isFinalized}
                     className="w-full p-2 border rounded-md dark:bg-slate-600 dark:border-gray-500"
@@ -436,6 +449,7 @@ const EvaluationSection = ({ step, aiData, editedData, isFinalized, onChange }: 
             <label className="font-medium text-gray-600 dark:text-gray-300">Attending Comments:</label>
             <textarea 
                 value={editedData.attendingComments ?? ''}
+                placeholder={aiData.comments}
                 onChange={(e) => onChange('attendingComments', e.target.value)}
                 disabled={isFinalized}
                 className="w-full p-2 border rounded-md dark:bg-slate-600 dark:border-gray-500 mt-1"

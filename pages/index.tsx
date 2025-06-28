@@ -1,4 +1,3 @@
-// pages/index.tsx
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import SurgerySelector from '../components/SurgerySelector'; 
@@ -7,6 +6,7 @@ interface PastEvaluation {
   id: string;
   surgery: string;
   date: string;
+  residentName?: string;
 }
 
 export default function Home() {
@@ -17,35 +17,44 @@ export default function Home() {
   const [progress, setProgress] = useState(0);
   const [progressStep, setProgressStep] = useState('');
   const [pastEvaluations, setPastEvaluations] = useState<PastEvaluation[]>([]);
+  const [residentName, setResidentName] = useState('');
+  const [additionalContext, setAdditionalContext] = useState('');
   const router = useRouter();
 
   useEffect(() => {
     const keys = Object.keys(localStorage).filter(key => key.startsWith('evaluation-'));
-    const evaluations: PastEvaluation[] = keys.map(key => {
+    const evaluations = keys
+      .map((key): PastEvaluation | null => {
         const id = key.replace('evaluation-', '');
         try {
             const data = JSON.parse(localStorage.getItem(key) || '{}');
-            return { 
-                id, 
-                surgery: data.surgery, 
-                date: new Date(parseInt(id, 10)).toLocaleString() 
-            };
+            if (data.surgery) {
+                return {
+                    id,
+                    surgery: data.surgery,
+                    residentName: data.residentName,
+                    date: new Date(parseInt(id, 10)).toLocaleString()
+                };
+            }
+            return null;
         } catch (e) {
+            console.error("Failed to parse past evaluation from localStorage", e);
             return null;
         }
-    }).filter((item): item is PastEvaluation => item !== null)
-      .sort((a, b) => parseInt(b.id, 10) - parseInt(a.id, 10)); // Sort by newest first
-      
+      })
+      .filter((item): item is PastEvaluation => item !== null)
+      .sort((a, b) => parseInt(b.id, 10) - parseInt(a.id, 10));
+
     setPastEvaluations(evaluations);
   }, []);
 
   const handleSubmit = async () => {
-    if (!selectedSurgery || !file) {
-      setError('Please select a surgery and upload an audio file.');
+    if (!selectedSurgery || !file || !residentName) {
+      setError("Please select a surgery, enter the resident's name, and upload an audio or video file.");
       return;
     }
-    if (file.type !== 'audio/mpeg') {
-      setError('Please upload an MP3 audio file.');
+    if (!['audio/mpeg', 'video/mp4', 'video/webm', 'video/ogg'].includes(file.type)) {
+      setError('Please upload an MP3, MP4, WebM, or Ogg file.');
       return;
     }
 
@@ -56,6 +65,8 @@ export default function Home() {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('surgery', selectedSurgery);
+    formData.append('residentName', residentName);
+    formData.append('additionalContext', additionalContext);
 
     try {
       setProgress(25);
@@ -81,6 +92,8 @@ export default function Home() {
       localStorage.setItem(`evaluation-${id}`, JSON.stringify({
         ...analysisResult,
         surgery: selectedSurgery,
+        residentName: residentName,
+        additionalContext: additionalContext,
       }));
 
       router.push(`/results/${id}`);
@@ -100,7 +113,7 @@ export default function Home() {
               Surgical AI Evaluator
             </h1>
             <p className="text-md text-gray-500 dark:text-gray-400">
-              Upload an audio recording of a procedure for automated evaluation.
+              Upload an audio or video recording of a procedure for automated evaluation.
             </p>
         </div>
 
@@ -110,8 +123,36 @@ export default function Home() {
           </div>
 
           <div>
+            <label htmlFor="resident-name" className="block mb-2 text-lg font-medium text-gray-700 dark:text-gray-300">
+                Resident Name
+            </label>
+            <input
+                id="resident-name"
+                type="text"
+                value={residentName}
+                onChange={(e) => setResidentName(e.target.value)}
+                className="block w-full bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-white py-3 px-4 rounded-lg leading-tight focus:outline-none focus:bg-white dark:focus:bg-slate-600 focus:border-brand-green-500 shadow-sm"
+                placeholder="e.g., Dr. Smith"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="additional-context" className="block mb-2 text-lg font-medium text-gray-700 dark:text-gray-300">
+                Additional Context (Optional)
+            </label>
+            <textarea
+                id="additional-context"
+                value={additionalContext}
+                onChange={(e) => setAdditionalContext(e.target.value)}
+                className="block w-full bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-white py-3 px-4 rounded-lg leading-tight focus:outline-none focus:bg-white dark:focus:bg-slate-600 focus:border-brand-green-500 shadow-sm"
+                placeholder="e.g., This was a simulation, patient had significant adhesions, etc."
+                rows={3}
+            />
+          </div>
+
+          <div>
             <label htmlFor="file-upload" className="block mb-2 text-lg font-medium text-gray-700 dark:text-gray-200">
-              Upload Voice Recording (.mp3)
+              Upload Voice Recording (.mp3, .mp4, etc.)
             </label>
             <div className="mt-2 flex justify-center rounded-lg border border-dashed border-gray-900/25 dark:border-gray-500/50 px-6 py-10">
               <div className="text-center">
@@ -121,11 +162,11 @@ export default function Home() {
                 <div className="mt-4 flex text-sm leading-6 text-gray-600 dark:text-gray-400">
                   <label htmlFor="file-upload" className="relative cursor-pointer rounded-md bg-white dark:bg-slate-800 font-semibold text-brand-green focus-within:outline-none focus-within:ring-2 focus-within:ring-brand-green focus-within:ring-offset-2 dark:focus-within:ring-offset-slate-800 hover:text-brand-green-500">
                     <span>Upload a file</span>
-                    <input id="file-upload" name="file-upload" type="file" className="sr-only" accept="audio/mpeg" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                    <input id="file-upload" name="file-upload" type="file" className="sr-only" accept="audio/mpeg,video/mp4,video/webm,video/ogg" onChange={(e) => setFile(e.target.files?.[0] || null)} />
                   </label>
                   <p className="pl-1">or drag and drop</p>
                 </div>
-                <p className="text-xs leading-5 text-gray-600 dark:text-gray-400">{file ? file.name : "MP3 up to 10MB"}</p>
+                <p className="text-xs leading-5 text-gray-600 dark:text-gray-400">{file ? file.name : "MP3, MP4, WebM, Ogg (up to 200MB)"}</p>
               </div>
             </div>
           </div>
@@ -141,7 +182,7 @@ export default function Home() {
         <div className="mt-8">
           <button
             onClick={handleSubmit}
-            disabled={isAnalyzing || !file || !selectedSurgery}
+            disabled={isAnalyzing || !file || !selectedSurgery || !residentName}
             className="w-full bg-brand-green text-white px-6 py-3 rounded-lg shadow-md text-lg font-semibold
                       hover:bg-brand-green-500 hover:scale-105 transform transition-all duration-200 ease-in-out
                       focus:outline-none focus:ring-2 focus:ring-brand-green-500 focus:ring-offset-2
@@ -173,7 +214,7 @@ export default function Home() {
                 {pastEvaluations.map(evalItem => (
                   <li key={evalItem.id} className="p-2 border rounded-md dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-slate-700">
                     <a href={`/results/${evalItem.id}`} className="flex justify-between">
-                      <span>{evalItem.surgery}</span>
+                      <span>{evalItem.surgery}{evalItem.residentName ? ` - ${evalItem.residentName}`: ''}</span>
                       <span className="text-sm text-gray-500 dark:text-gray-400">{evalItem.date}</span>
                     </a>
                   </li>

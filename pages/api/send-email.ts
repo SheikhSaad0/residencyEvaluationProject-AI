@@ -1,4 +1,3 @@
-// pages/api/send-email.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import nodemailer from 'nodemailer';
 
@@ -92,7 +91,7 @@ const EVALUATION_CONFIGS: { [key: string]: { procedureSteps: {key: string, name:
     },
 };
 
-const createEmailHtml = (surgery: string, evaluation: any) => {
+const createEmailHtml = (surgery: string, evaluation: any, residentName?: string, additionalContext?: string) => {
   const config = EVALUATION_CONFIGS[surgery as keyof typeof EVALUATION_CONFIGS];
   if (!config) return `<p>Could not generate report for surgery: ${surgery}</p>`;
 
@@ -121,13 +120,24 @@ const createEmailHtml = (surgery: string, evaluation: any) => {
   }).join('');
 
   const descriptionsHtml = Object.entries(config.caseDifficultyDescriptions).map(([key, value]) => `<li><strong>${key}:</strong> ${value}</li>`).join('');
+  const residentHtml = residentName ? `<h3 style="font-size: 18px; color: #4a5568; text-align: center; margin-bottom: 20px;">Resident: ${residentName}</h3>` : '';
+  const contextHtml = additionalContext
+    ? `
+    <div style="margin-bottom: 20px;">
+      <h4 style="margin-top: 0; font-size: 16px;">Provided Context:</h4>
+      <p style="background-color: #f7fafc; padding: 10px; border-radius: 5px; border: 1px solid #eee; font-style: italic;">${additionalContext}</p>
+    </div>
+    `
+    : '';
 
   return `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px;">
       <h1 style="font-size: 24px; color: #1a202c; text-align: center;">Final Evaluation Report</h1>
       <h2 style="font-size: 20px; color: #2d3748; text-align: center; border-bottom: 1px solid #eee; padding-bottom: 10px;">${surgery}</h2>
+      ${residentHtml}
       
       <h3 style="font-size: 18px; color: #2d3748; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px;">Overall Assessment</h3>
+      ${contextHtml}
       <div style="margin-bottom: 20px;">
         <h4 style="margin-top: 0; font-size: 16px;">Case Difficulty Descriptions:</h4>
         <ul style="list-style-position: inside; padding-left: 0;">${descriptionsHtml}</ul>
@@ -153,9 +163,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ message: 'Method not allowed' });
   }
 
-  const { to, surgery, evaluation } = req.body;
-  const subject = `Final Evaluation Results for ${surgery}`;
-  const html = createEmailHtml(surgery, evaluation);
+  const { to, surgery, evaluation, residentName, additionalContext } = req.body;
+  const subject = `Final Evaluation Results for ${residentName || 'Resident'} - ${surgery}`;
+  const html = createEmailHtml(surgery, evaluation, residentName, additionalContext);
   
   const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,

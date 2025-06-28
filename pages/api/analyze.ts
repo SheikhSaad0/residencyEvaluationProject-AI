@@ -1,10 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import formidable from 'formidable';
-// Import 'createClient' and 'DeepgramError' from the Deepgram SDK
 import { createClient, DeepgramError } from '@deepgram/sdk';
 import fs from 'fs';
 
-// Interface definitions remain the same
 interface EvaluationStep {
   score: number;
   time: string;
@@ -18,7 +16,6 @@ interface EvaluationData {
   transcription: string;
 }
 
-// EVALUATION_CONFIGS updated with goal times
 const EVALUATION_CONFIGS = {
     'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)': {
         procedureSteps: [
@@ -109,11 +106,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const form = formidable({});
   let audioFile: formidable.File | null = null;
   let surgeryName: string = '';
+  let additionalContext: string = '';
 
   try {
     const [fields, files] = await form.parse(req);
     audioFile = files.file?.[0] ?? null;
     surgeryName = fields.surgery?.[0] ?? '';
+    additionalContext = fields.additionalContext?.[0] ?? '';
 
     console.log("✅ File upload complete.");
 
@@ -131,7 +130,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log("---");
 
     console.log("Step 2: Evaluating transcript with Gemini...");
-    const evaluation = await evaluateTranscriptWithGemini(transcription, surgeryName);
+    const evaluation = await evaluateTranscriptWithGemini(transcription, surgeryName, additionalContext);
     console.log("✅ Evaluation complete.");
     console.log("---");
 
@@ -175,7 +174,6 @@ async function transcribeWithDeepgram(audioFile: formidable.File): Promise<strin
     
     let transcriptText = '';
     if (utterances && utterances.length > 0) {
-      // Let TypeScript infer the type of 'utt'
       transcriptText = utterances
         .map(utt => `[Speaker ${utt.speaker}] (${utt.start.toFixed(2)}s): ${utt.transcript}`)
         .join('\n');
@@ -190,7 +188,7 @@ async function transcribeWithDeepgram(audioFile: formidable.File): Promise<strin
     return transcriptText;
 }
 
-async function evaluateTranscriptWithGemini(transcription: string, surgeryName: string): Promise<any> {
+async function evaluateTranscriptWithGemini(transcription: string, surgeryName: string, additionalContext: string): Promise<any> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY environment variable not set.");
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
@@ -216,28 +214,42 @@ async function evaluateTranscriptWithGemini(transcription: string, surgeryName: 
         }
     };
 
+    const contextPromptSection = additionalContext
+        ? `
+      **Additional Context to Consider:**
+      ---
+      ${additionalContext}
+      ---
+      `
+        : '';
+
     const prompt = `
-      You are an expert surgical education analyst. Your task is to provide a detailed, constructive evaluation of a resident's performance based on a transcript that includes speaker labels and timestamps.
+      You are an expert surgical education analyst. Your task is to provide a detailed, constructive evaluation of a resident's performance based on a transcript and the provided context.
 
       **Procedure:** ${surgeryName}
+      ${contextPromptSection}
       **Transcript with Speaker Labels:**
       ---
       ${transcription}
       ---
 
       **Instructions:**
-      1.  The transcript is a dialogue with speaker labels (e.g., [Speaker 0], [Speaker 1]) and timestamps. First, determine which speaker is the resident (learner) and which is the attending (teacher). The attending usually gives more instructions and guidance, while the resident asks more questions or is the one performing the actions being guided.
-      2.  If the transcript is too short or lacks meaningful surgical dialogue, you MUST refuse to evaluate. Return a JSON object where 'additionalComments' explains why the evaluation is not possible, and all other fields are default values.
-      3.  Based on the dialogue attributed to the resident, evaluate their performance for ALL procedure steps listed below. The evaluation should focus solely on the resident's actions and understanding.
-      4.  **If a step WAS performed:**
-          * 'score': (Number 1-5) based on the resident's performance according to a standard surgical scoring scale (1=unsafe, 5=expert).
-          * 'time': (String) Provide a rough estimate of the time spent on this step in the format "X minutes Y seconds" by analyzing the timestamps of the relevant utterances.
-          * 'comments': (String) Provide DETAILED, constructive feedback on the resident's actions and understanding.
-      5.  **If a step was NOT performed or mentioned:**
-          * 'score': 0
-          * 'time': "N/A"
-          * 'comments': "This step was not performed or mentioned in the provided transcript."
-      6.  **Return ONLY the JSON object.**
+      1.  Review all the information provided, including the procedure, transcript, and any additional context.
+      2.  First, determine which speaker is the resident (learner) and which is the attending (teacher). The evaluation should focus on the resident's actions and understanding.
+      3.  If the transcript is too short or lacks meaningful surgical dialogue, you MUST refuse to evaluate. Return a JSON object where 'additionalComments' explains why the evaluation is not possible, 'caseDifficulty' is 0, and all step scores are 0.
+      4.  For EACH procedure step listed in the JSON schema, evaluate the resident's performance based on the transcript.
+          * **If a step WAS performed:**
+              * 'score': (Number 1-5) based on a standard surgical scoring scale (1=unsafe, 5=expert).
+              * 'time': (String) Estimate the time spent on this step in the format "X minutes Y seconds" by analyzing timestamps.
+              * 'comments': (String) Provide DETAILED, constructive feedback, taking into account the additional context if provided.
+          * **If a step was NOT performed or mentioned:**
+              * 'score': 0
+              * 'time': "N/A"
+              * 'comments': "This step was not performed or mentioned."
+      5.  **Overall Assessment:**
+          * 'caseDifficulty': (Number 1-3) Analyze the entire transcript and provided context to determine the overall case difficulty (1=Low, 2=Moderate, 3=High).
+          * 'additionalComments': (String) Provide a concise summary of the resident's overall performance, including strengths and areas for improvement. This is for the final remarks. Make sure to incorporate the additional context in your assessment.
+      6.  **Return ONLY the JSON object.** The entire response must be a single JSON object conforming to a schema.
     `;
 
     const payload = {
