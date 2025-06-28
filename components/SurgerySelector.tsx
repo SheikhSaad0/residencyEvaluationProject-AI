@@ -19,13 +19,13 @@ interface Props {
 const SurgerySelector: React.FC<Props> = ({ selected, setSelected }) => {
   return (
     <div>
-      <label htmlFor="surgery-select" className="block mb-3 text-lg font-medium text-gray-700">
+      <label htmlFor="surgery-select" className="block mb-2 text-lg font-medium text-gray-700 dark:text-gray-300">
         Select a Surgery
       </label>
       <select
         id="surgery-select"
-        className="block appearance-none w-full bg-white border border-gray-300 text-gray-700
-                   py-3 px-4 pr-8 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-blue-500
+        className="block appearance-none w-full bg-white dark:bg-slate-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-white
+                   py-3 px-4 pr-8 rounded-lg leading-tight focus:outline-none focus:bg-white dark:focus:bg-slate-600 focus:border-brand-green-500
                    shadow-sm cursor-pointer"
         value={selected}
         onChange={(e) => setSelected(e.target.value)}
