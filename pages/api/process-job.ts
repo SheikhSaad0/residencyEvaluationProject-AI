@@ -1,0 +1,274 @@
+import { NextApiRequest, NextApiResponse } from 'next';
+import { kv } from '@vercel/kv';
+import { createClient } from '@deepgram/sdk';
+
+// Define the JobData interface directly in this file
+interface JobData {
+  id: string;
+  status: 'pending' | 'processing' | 'complete' | 'failed';
+  gcsUrl?: string;
+  surgeryName?: string;
+  residentName?: string;
+  additionalContext?: string;
+  result?: any;
+  error?: string;
+  createdAt: number;
+}
+
+// Define evaluation interfaces
+interface ProcedureStepConfig {
+    key: string;
+    name: string;
+}
+
+interface EvaluationStep {
+  score: number;
+  time: string;
+  comments: string;
+}
+
+interface GeminiEvaluationResult {
+  [key: string]: EvaluationStep | number | string;
+  caseDifficulty: number;
+  additionalComments: string;
+}
+
+interface EvaluationConfigs {
+    [key: string]: {
+        procedureSteps: ProcedureStepConfig[];
+    };
+}
+
+const EVALUATION_CONFIGS: EvaluationConfigs = {
+    'Laparoscopic Inguinal Hernia Repair with Mesh (TEP)': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement and Creation of Preperitoneal Space' },
+            { key: 'herniaDissection', name: 'Hernia Sac Reduction and Dissection of Hernia Space' },
+            { key: 'meshPlacement', name: 'Mesh Placement' },
+            { key: 'portClosure', name: 'Port Closure' },
+            { key: 'skinClosure', name: 'Skin Closure' },
+        ],
+    },
+    'Laparoscopic Cholecystectomy': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement' },
+            { key: 'calotTriangleDissection', name: "Dissection of Calot's Triangle" },
+            { key: 'cysticArteryDuctClipping', name: 'Clipping and division of Cystic Artery and Duct' },
+            { key: 'gallbladderDissection', name: 'Gallbladder Dissection of the Liver' },
+            { key: 'specimenRemoval', name: 'Specimen removal' },
+            { key: 'portClosure', name: 'Port Closure' },
+            { key: 'skinClosure', name: 'Skin Closure' },
+        ],
+    },
+    'Robotic Cholecystectomy': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement' },
+            { key: 'calotTriangleDissection', name: "Dissection of Calot's Triangle" },
+            { key: 'cysticArteryDuctClipping', name: 'Clipping and division of Cystic Artery and Duct' },
+            { key: 'gallbladderDissection', name: 'Gallbladder Dissection of the Liver' },
+            { key: 'specimenRemoval', name: 'Specimen removal' },
+            { key: 'portClosure', name: 'Port Closure' },
+            { key: 'skinClosure', name: 'Skin Closure' },
+        ],
+    },
+    'Robotic Assisted Laparoscopic Inguinal Hernia Repair (TAPP)': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement' },
+            { key: 'robotDocking', name: 'Docking the robot' },
+            { key: 'instrumentPlacement', name: 'Instrument Placement' },
+            { key: 'herniaReduction', name: 'Reduction of Hernia' },
+            { key: 'flapCreation', name: 'Flap Creation' },
+            { key: 'meshPlacement', name: 'Mesh Placement/Fixation' },
+            { key: 'flapClosure', name: 'Flap Closure' },
+            { key: 'undocking', name: 'Undocking/trocar removal' },
+            { key: 'skinClosure', name: 'Skin Closure' },
+        ],
+    },
+    'Robotic Lap Ventral Hernia Repair (TAPP)': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement' },
+            { key: 'robotDocking', name: 'Docking the robot' },
+            { key: 'instrumentPlacement', name: 'Instrument Placement' },
+            { key: 'herniaReduction', name: 'Reduction of Hernia' },
+            { key: 'flapCreation', name: 'Flap Creation' },
+            { key: 'herniaClosure', name: 'Hernia Closure' },
+            { key: 'meshPlacement', name: 'Mesh Placement/Fixation' },
+            { key: 'flapClosure', name: 'Flap Closure' },
+            { key: 'undocking', name: 'Undocking/trocar removal' },
+            { key: 'skinClosure', name: 'Skin Closure' },
+        ],
+    },
+    'Laparoscopic Appendicectomy': {
+        procedureSteps: [
+            { key: 'portPlacement', name: 'Port Placement' },
+            { key: 'appendixDissection', name: 'Identification, Dissection & Exposure of Appendix' },
+            { key: 'mesoappendixDivision', name: 'Division of Mesoappendix and Appendix Base' },
+            { key: 'specimenExtraction', name: 'Specimen Extraction' },
+            { key: 'portClosure', name: 'Port Closure' },
+            { key: 'skinClosure', name: 'Skin Closure' },
+        ],
+    },
+};
+
+
+const deepgram = createClient(process.env.DEEPGRAM_API_KEY || '');
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  const { jobId } = req.body;
+  if (!jobId) {
+    return res.status(400).json({ message: 'jobId is required.' });
+  }
+  
+  res.status(202).json({ message: 'Processing started.' });
+
+  try {
+    const job = await kv.get<JobData>(`job:${jobId}`);
+    if (!job || !job.gcsUrl || !job.surgeryName) {
+      throw new Error('Job not found or is missing data.');
+    }
+
+    await kv.set(`job:${jobId}`, { ...job, status: 'processing' });
+
+    // 1. Transcribe from GCS URL
+    const transcription = await transcribeWithDeepgram(job.gcsUrl);
+
+    // 2. Evaluate
+    const evaluation = await evaluateTranscriptWithGemini(transcription, job.surgeryName, job.additionalContext || '');
+
+    // 3. Update job with result
+    const finalJobData: JobData = {
+        ...job,
+        status: 'complete',
+        result: {
+            ...evaluation,
+            transcription,
+            surgery: job.surgeryName,
+            residentName: job.residentName,
+            additionalContext: job.additionalContext,
+            isFinalized: false,
+        }
+    };
+    await kv.set(`job:${jobId}`, finalJobData);
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+    const job = await kv.get<JobData>(`job:${jobId}`);
+    if(job) {
+        await kv.set(`job:${jobId}`, { ...job, status: 'failed', error: errorMessage });
+    }
+  }
+}
+
+async function transcribeWithDeepgram(gcsUrl: string): Promise<string> {
+    const { result, error } = await deepgram.listen.prerecorded.transcribeUrl(
+      { url: gcsUrl },
+      { model: 'nova-2', diarize: true, punctuate: true, utterances: true }
+    );
+  
+    if (error) throw error;
+    
+    const utterances = result.results?.utterances;
+    if (!utterances || utterances.length === 0) {
+        throw new Error("Transcription returned no utterances.");
+    }
+    
+    return utterances
+        .map(utt => `[Speaker ${utt.speaker}] (${utt.start.toFixed(2)}s): ${utt.transcript}`)
+        .join('\n');
+}
+
+interface SchemaProperties {
+    [key: string]: { type: string; properties?: { [key: string]: { type: string } } };
+}
+
+async function evaluateTranscriptWithGemini(transcription: string, surgeryName: string, additionalContext: string): Promise<GeminiEvaluationResult> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("GEMINI_API_KEY environment variable not set.");
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const EVALUATION_CONFIG = EVALUATION_CONFIGS[surgeryName as keyof typeof EVALUATION_CONFIGS];
+
+    const RESPONSE_JSON_SCHEMA = {
+        type: "OBJECT",
+        properties: {
+            ...EVALUATION_CONFIG.procedureSteps.reduce((acc: SchemaProperties, step: ProcedureStepConfig) => {
+                acc[step.key] = {
+                    type: "OBJECT",
+                    properties: {
+                        score: { type: "NUMBER" },
+                        time: { type: "STRING" },
+                        comments: { type: "STRING" }
+                    }
+                };
+                return acc;
+            }, {}),
+            caseDifficulty: { type: "NUMBER" },
+            additionalComments: { type: "STRING" },
+        }
+    };
+
+    const contextPromptSection = additionalContext
+        ? `
+      **Additional Context to Consider:**
+      ---
+      ${additionalContext}
+      ---
+      `
+        : '';
+
+    const prompt = `
+      You are an expert surgical education analyst. Your task is to provide a detailed, constructive evaluation of a resident's performance based on a transcript and the provided context.
+
+      **Procedure:** ${surgeryName}
+      ${contextPromptSection}
+      **Transcript with Speaker Labels:**
+      ---
+      ${transcription}
+      ---
+
+      **Instructions:**
+      1.  Review all the information provided, including the procedure, transcript, and any additional context.
+      2.  First, determine which speaker is the resident (learner) and which is the attending (teacher). The evaluation should focus on the resident's actions and understanding.
+      3.  If the transcript is too short or lacks meaningful surgical dialogue, you MUST refuse to evaluate. Return a JSON object where 'additionalComments' explains why the evaluation is not possible, 'caseDifficulty' is 0, and all step scores are 0.
+      4.  For EACH procedure step listed in the JSON schema, evaluate the resident's performance based on the transcript.
+          * **If a step WAS performed:**
+              * 'score': (Number 1-5) based on a standard surgical scoring scale (1=unsafe, 5=expert).
+              * 'time': (String) Estimate the time spent on this step in the format "X minutes Y seconds" by analyzing timestamps.
+              * 'comments': (String) Provide DETAILED, constructive feedback, taking into account the additional context if provided.
+          * **If a step was NOT performed or mentioned:**
+              * 'score': 0
+              * 'time': "N/A"
+              * 'comments': "This step was not performed or mentioned."
+      5.  **Overall Assessment:**
+          * 'caseDifficulty': (Number 1-3) Analyze the entire transcript and provided context to determine the overall case difficulty (1=Low, 2=Moderate, 3=High).
+          * 'additionalComments': (String) Provide a concise summary of the resident's overall performance, including strengths and areas for improvement. This is for the final remarks. Make sure to incorporate the additional context in your assessment.
+      6.  **Return ONLY the JSON object.** The entire response must be a single JSON object conforming to a schema.
+    `;
+
+    const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: RESPONSE_JSON_SCHEMA,
+        },
+    };
+
+    const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`Gemini evaluation API request failed: ${response.status} ${response.statusText} - ${errorBody}`);
+    }
+
+    const result = await response.json();
+    const resultText = result.candidates[0].content.parts[0].text;
+    return JSON.parse(resultText) as GeminiEvaluationResult;
+}
