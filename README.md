@@ -18,10 +18,10 @@ Upload an MP3 file and enjoy!
 ## Credits
 
 Created by Saad M. Mahmood
-Original Idea by James Harris Jr. and Udit Choubey
+Original Idea by James Harris Jr. MD and Udit Choubey MBBS
 
 Affiliated with:
-Johns Hopkins Howard County Medical Center
+Johns Hopkins Howard County Medical Center,
 Johns Hopkins School of Medicine
 
 Original Feed Back Form:
