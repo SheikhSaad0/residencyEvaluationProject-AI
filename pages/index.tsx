@@ -88,42 +88,69 @@ export default function Home() {
   };
 
 
+  // ... (imports and component start are the same)
+// ... (the pollJobStatus function remains the same)
+
   const handleSubmit = async () => {
     if (!selectedSurgery || !file || !residentName) {
       setError("Please select a surgery, enter the resident's name, and upload an audio or video file.");
-      return;
-    }
-    if (!file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
-      setError('Please upload a valid audio or video file.');
       return;
     }
 
     setError(null);
     setIsAnalyzing(true);
     setProgress(0);
-    setProgressStep('Uploading file...');
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('surgery', selectedSurgery);
-    formData.append('residentName', residentName);
-    formData.append('additionalContext', additionalContext);
 
     try {
-      // Change from /api/analyze to the new /api/submit endpoint
-      const response = await fetch('/api/submit', {
+      // Step 1: Get a signed URL from our backend
+      setProgressStep('Preparing secure upload...');
+      const signedUrlResponse = await fetch('/api/generate-upload-url', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, fileType: file.type }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
+      if (!signedUrlResponse.ok) {
+        const errorData = await signedUrlResponse.json();
+        throw new Error(errorData.message || 'Could not get a secure upload URL.');
+      }
+
+      const { signedUrl, gcsUrl } = await signedUrlResponse.json();
+      setProgress(10);
+
+      // Step 2: Upload the file directly to Google Cloud Storage
+      setProgressStep('Uploading file (this may take a moment)...');
+      const uploadResponse = await fetch(signedUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('File upload to storage failed.');
+      }
+      setProgress(25);
+
+      // Step 3: Submit the job to our backend with the GCS URL
+      setProgressStep('File uploaded. Submitting for analysis...');
+      const jobResponse = await fetch('/api/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gcsUrl,
+          surgeryName: selectedSurgery,
+          residentName,
+          additionalContext,
+        }),
+      });
+
+      if (!jobResponse.ok) {
+        const errorData = await jobResponse.json();
         throw new Error(errorData.message || 'Failed to submit analysis job.');
       }
 
-      setProgress(10);
-      setProgressStep('File uploaded. Initializing analysis...');
-      const { jobId } = await response.json();
-      
+      const { jobId } = await jobResponse.json();
+
       // Start polling for the result
       pollJobStatus(jobId);
 
@@ -133,6 +160,8 @@ export default function Home() {
       setIsAnalyzing(false);
     }
   };
+
+// ... (The rest of the component, including the JSX and pollJobStatus function, remains the same)
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900 p-4">

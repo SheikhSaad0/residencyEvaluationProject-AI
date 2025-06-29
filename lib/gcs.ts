@@ -28,7 +28,7 @@ function initializeGCS() {
 }
 
 /**
- * Uploads a local file to Google Cloud Storage.
+ * Uploads a local file to Google Cloud Storage. (Used by the backend)
  * @param localPath The path to the local file to upload.
  * @param destination The destination path in the GCS bucket.
  * @returns The public URL of the uploaded file.
@@ -60,8 +60,7 @@ export async function uploadFileToGCS(localPath: string, destination: string): P
 }
 
 /**
- * This function is useful if Deepgram can transcribe directly from a public URL.
- * Ensure your bucket objects are publicly accessible if you use this approach.
+ * Gets the public URL for a file in GCS.
  */
 export function getPublicUrl(destination: string): string {
     const bucketName = process.env.GCS_BUCKET_NAME;
@@ -69,4 +68,34 @@ export function getPublicUrl(destination: string): string {
         throw new Error("GCS_BUCKET_NAME environment variable not set.");
     }
     return `https://storage.googleapis.com/${bucketName}/${destination}`;
+}
+
+
+/**
+ * NEW FUNCTION
+ * Generates a v4 signed URL for uploading a file directly from the client.
+ * @param destination The destination path in the GCS bucket (e.g., 'uploads/my-file.mp3').
+ * @param contentType The MIME type of the file being uploaded.
+ * @returns A promise that resolves to the signed URL for a PUT request.
+ */
+export async function generateV4UploadSignedUrl(destination: string, contentType: string): Promise<string> {
+    initializeGCS(); // Ensure GCS is initialized
+    if (!bucket) {
+        throw new Error('GCS Bucket is not initialized. Check your environment variables.');
+    }
+
+    const options = {
+        version: 'v4' as const,
+        action: 'write' as const,
+        expires: Date.now() + 15 * 60 * 1000, // URL expires in 15 minutes
+        contentType,
+    };
+
+    try {
+        const [url] = await bucket.file(destination).getSignedUrl(options);
+        return url;
+    } catch (error) {
+        console.error('ERROR generating signed GCS URL:', error);
+        throw error;
+    }
 }
