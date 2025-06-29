@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { Analytics } from "@vercel/analytics/next"
 import Image from 'next/image';
 import SurgerySelector from '../components/SurgerySelector';
 
-import { Analytics } from "@vercel/analytics/next"
+
 
 interface PastEvaluation {
   id: string;
@@ -196,7 +197,7 @@ export default function Home() {
                 placeholder="e.g., Dr. Smith"
             />
           </div>
-
+          <Analytics />
           <div>
             <label htmlFor="additional-context" className="block mb-2 text-lg font-medium text-gray-700 dark:text-gray-300">
                 Additional Context (Optional)
