@@ -1,12 +1,12 @@
 import { PrismaClient } from '@prisma/client';
-import type { Job } from '@prisma/client'; // This line is changed
+import type { Job } from '@prisma/client';
 import { createClient, DeepgramError } from '@deepgram/sdk';
 
 
 const prisma = new PrismaClient();
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY || '');
 
-// --- Interfaces and Configs (Moved from API routes) ---
+// --- Interfaces and Configs ---
 
 interface ProcedureStepConfig {
     key: string;
@@ -126,9 +126,10 @@ async function transcribeWithDeepgram(gcsUrl: string): Promise<string> {
         throw new Error("Transcription returned no utterances. The audio might be silent or in an unsupported format.");
     }
     
+    // Correctly join with a newline character
     return utterances
         .map(utt => `[Speaker ${utt.speaker}] (${utt.start.toFixed(2)}s): ${utt.transcript}`)
-        .join('\\n');
+        .join('\n');
 }
 
 async function evaluateTranscriptWithGemini(transcription: string, surgeryName: string, additionalContext: string): Promise<GeminiEvaluationResult> {
