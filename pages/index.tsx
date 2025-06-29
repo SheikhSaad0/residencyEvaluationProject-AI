@@ -21,22 +21,21 @@ export default function Home() {
   const [additionalContext, setAdditionalContext] = useState('');
   const router = useRouter();
 
-  useEffect(() => {
-    // Fetches past evaluations from the new API endpoint instead of localStorage
-    const fetchPastEvaluations = async () => {
-      try {
-        const response = await fetch('/api/evaluations');
-        if (!response.ok) {
-          throw new Error('Failed to fetch past evaluations');
-        }
-        const data = await response.json();
-        setPastEvaluations(data);
-      } catch (err) {
-        console.error(err);
-        setError(err instanceof Error ? err.message : 'Could not load past evaluations.');
+  const fetchPastEvaluations = async () => {
+    try {
+      const response = await fetch('/api/evaluations');
+      if (!response.ok) {
+        throw new Error('Failed to fetch past evaluations');
       }
-    };
+      const data = await response.json();
+      setPastEvaluations(data);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : 'Could not load past evaluations.');
+    }
+  };
 
+  useEffect(() => {
     fetchPastEvaluations();
   }, []);
 
@@ -51,19 +50,23 @@ export default function Home() {
 
       switch (data.status) {
         case 'pending':
-          setProgress(25);
-          setProgressStep('File uploaded. Analysis is pending...');
+          setProgress(30);
+          setProgressStep('Job submitted. Waiting for processing to start...');
           setTimeout(() => pollJobStatus(jobId), 4000); // Poll every 4 seconds
           break;
-        case 'processing':
+        case 'processing-transcription':
           setProgress(50);
-          setProgressStep('Transcription and evaluation in progress...');
+          setProgressStep('Transcription in progress...');
+          setTimeout(() => pollJobStatus(jobId), 4000);
+          break;
+        case 'processing-evaluation':
+          setProgress(75);
+          setProgressStep('AI evaluation in progress...');
           setTimeout(() => pollJobStatus(jobId), 4000);
           break;
         case 'complete':
           setProgress(100);
           setProgressStep('Analysis complete!');
-          // No longer saving to localStorage, just redirecting to the results page with the DB job ID.
           router.push(`/results/${data.id}`);
           break;
         case 'failed':
@@ -87,7 +90,6 @@ export default function Home() {
     setProgress(0);
 
     try {
-      // Step 1: Get a signed URL from our backend
       setProgressStep('Preparing secure upload...');
       const signedUrlResponse = await fetch('/api/generate-upload-url', {
         method: 'POST',
@@ -100,10 +102,9 @@ export default function Home() {
         throw new Error(errorData.message || 'Could not get a secure upload URL.');
       }
 
-      const { signedUrl, gcsUrl } = await signedUrlResponse.json();
+      const { signedUrl } = await signedUrlResponse.json();
       setProgress(10);
-
-      // Step 2: Upload the file directly to Google Cloud Storage
+      
       setProgressStep('Uploading file (this may take a moment)...');
       const uploadResponse = await fetch(signedUrl, {
         method: 'PUT',
@@ -115,9 +116,10 @@ export default function Home() {
         throw new Error('File upload to storage failed.');
       }
       setProgress(25);
-
-      // Step 3: Submit the job to our backend with the GCS URL
+      
       setProgressStep('File uploaded. Submitting for analysis...');
+      // The gcsUrl is now passed in the body of the submit request
+      const gcsUrl = signedUrl.split('?')[0];
       const jobResponse = await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,14 +137,31 @@ export default function Home() {
       }
 
       const { jobId } = await jobResponse.json();
-
-      // Start polling for the result
       pollJobStatus(jobId);
 
     } catch (error) {
       console.error('Error during analysis submission:', error);
       setError(error instanceof Error ? error.message : 'An unknown error occurred.');
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this evaluation?')) {
+        try {
+            const response = await fetch(`/api/evaluations/${id}`, {
+                method: 'DELETE',
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to delete evaluation.');
+            }
+            // Refresh the list from the server to ensure consistency
+            fetchPastEvaluations();
+        } catch (err) {
+            console.error(err);
+            setError(err instanceof Error ? err.message : 'An error occurred while deleting.');
+        }
     }
   };
 
@@ -247,17 +266,24 @@ export default function Home() {
 
         {pastEvaluations.length > 0 && (
           <div className="mt-10">
-            <details>
+            <details open>
               <summary className="text-lg font-semibold text-gray-700 dark:text-gray-300 cursor-pointer">
                 Past Evaluations
               </summary>
               <ul className="mt-4 space-y-2">
                 {pastEvaluations.map(evalItem => (
-                  <li key={evalItem.id} className="p-2 border rounded-md dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-slate-700">
-                    <a href={`/results/${evalItem.id}`} className="flex justify-between">
+                  <li key={evalItem.id} className="flex justify-between items-center p-2 border rounded-md dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-slate-700">
+                    <a href={`/results/${evalItem.id}`} className="flex-grow">
                       <span>{evalItem.surgery}{evalItem.residentName ? ` - ${evalItem.residentName}`: ''}</span>
-                      <span className="text-sm text-gray-500 dark:text-gray-400">{evalItem.date}</span>
+                      <span className="block text-sm text-gray-500 dark:text-gray-400">{evalItem.date}</span>
                     </a>
+                    <button 
+                      onClick={() => handleDelete(evalItem.id)}
+                      className="ml-4 bg-red-500 text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-red-600 transition-colors"
+                      aria-label={`Delete evaluation for ${evalItem.surgery}`}
+                    >
+                      Delete
+                    </button>
                   </li>
                 ))}
               </ul>
