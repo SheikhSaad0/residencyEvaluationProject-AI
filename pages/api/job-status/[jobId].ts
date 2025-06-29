@@ -21,12 +21,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(404).json({ message: 'Job not found.' });
         }
 
-        // If you want to parse result JSON, you can do so here:
         let result = undefined;
         if (job.result) {
             try {
                 result = JSON.parse(job.result);
-            } catch (e) {
+            } catch {
                 result = job.result;
             }
         }
