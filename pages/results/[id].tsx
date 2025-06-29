@@ -134,40 +134,70 @@ export default function ResultsPage() {
   const [isSending, setIsSending] = useState(false);
   const [emailMessage, setEmailMessage] = useState('');
 
-
   useEffect(() => {
-    if (id) {
-        const resultData = localStorage.getItem(`evaluation-${id}`);
-        if (resultData) {
-            try {
-                const parsedData = JSON.parse(resultData);
+    // Fetches the evaluation from the database instead of localStorage
+    const fetchEvaluation = async (jobId: string) => {
+        try {
+            const response = await fetch(`/api/job-status/${jobId}`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch evaluation data.');
+            }
+            const jobData = await response.json();
+
+            if (jobData.status === 'complete' && jobData.result) {
+                const parsedData = jobData.result;
                 setEvaluation(parsedData);
-                setEditedEvaluation(JSON.parse(JSON.stringify(parsedData))); 
+                setEditedEvaluation(JSON.parse(JSON.stringify(parsedData)));
                 setSurgery(parsedData.surgery);
                 setResidentName(parsedData.residentName || '');
                 setAdditionalContext(parsedData.additionalContext || '');
                 setIsFinalized(parsedData.isFinalized || false);
-    
+
                 const config = EVALUATION_CONFIGS[parsedData.surgery as keyof typeof EVALUATION_CONFIGS];
                 if (config) {
                     setProcedureSteps(config.procedureSteps);
                 }
-            } catch (error) {
-                console.error("Failed to parse evaluation data from localStorage", error);
+            } else if (jobData.status === 'pending' || jobData.status === 'processing') {
+                alert('This evaluation is still being processed. Please wait a moment and refresh.');
                 router.push('/');
+            } else {
+                 throw new Error('Evaluation not found or has failed.');
             }
-        } else {
+        } catch (error) {
+            console.error("Failed to fetch evaluation data", error);
+            alert("Could not load the evaluation. Redirecting to the home page.");
             router.push('/');
         }
+    };
+
+    if (id && typeof id === 'string') {
+        fetchEvaluation(id);
     }
   }, [id, router]);
 
-  const handleFinalize = () => {
-      if (editedEvaluation) {
-        const finalEvaluation = { ...editedEvaluation, isFinalized: true };
-        localStorage.setItem(`evaluation-${id}`, JSON.stringify(finalEvaluation));
+  const handleFinalize = async () => {
+    if (editedEvaluation && id) {
+      const finalEvaluation = { ...editedEvaluation, isFinalized: true };
+      try {
+        const response = await fetch(`/api/evaluations/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updatedEvaluation: finalEvaluation }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to finalize evaluation.');
+        }
+
         setIsFinalized(true);
+        setEditedEvaluation(finalEvaluation);
+        alert('Evaluation has been finalized!');
+      } catch (error) {
+          console.error('Finalization error:', error);
+          alert(error instanceof Error ? error.message : 'An unknown error occurred.');
       }
+    }
   };
   
   const handleSendEmail = async () => {

@@ -22,30 +22,22 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    const keys = Object.keys(localStorage).filter(key => key.startsWith('evaluation-'));
-    const evaluations = keys
-      .map((key): PastEvaluation | null => {
-        const id = key.replace('evaluation-', '');
-        try {
-            const data = JSON.parse(localStorage.getItem(key) || '{}');
-            if (data.surgery) {
-                return {
-                    id,
-                    surgery: data.surgery,
-                    residentName: data.residentName,
-                    date: new Date(parseInt(id, 10)).toLocaleString()
-                };
-            }
-            return null;
-        } catch (e) {
-            console.error("Failed to parse past evaluation from localStorage", e);
-            return null;
+    // Fetches past evaluations from the new API endpoint instead of localStorage
+    const fetchPastEvaluations = async () => {
+      try {
+        const response = await fetch('/api/evaluations');
+        if (!response.ok) {
+          throw new Error('Failed to fetch past evaluations');
         }
-      })
-      .filter((item): item is PastEvaluation => item !== null)
-      .sort((a, b) => parseInt(b.id, 10) - parseInt(a.id, 10));
+        const data = await response.json();
+        setPastEvaluations(data);
+      } catch (err) {
+        console.error(err);
+        setError(err instanceof Error ? err.message : 'Could not load past evaluations.');
+      }
+    };
 
-    setPastEvaluations(evaluations);
+    fetchPastEvaluations();
   }, []);
 
   const pollJobStatus = async (jobId: string) => {
@@ -71,11 +63,8 @@ export default function Home() {
         case 'complete':
           setProgress(100);
           setProgressStep('Analysis complete!');
-          const id = data.result.id || Date.now().toString();
-          localStorage.setItem(`evaluation-${id}`, JSON.stringify({
-            ...data.result,
-          }));
-          router.push(`/results/${id}`);
+          // No longer saving to localStorage, just redirecting to the results page with the DB job ID.
+          router.push(`/results/${data.id}`);
           break;
         case 'failed':
           throw new Error(data.error || 'The analysis job failed.');
@@ -86,10 +75,6 @@ export default function Home() {
         setIsAnalyzing(false);
     }
   };
-
-
-  // ... (imports and component start are the same)
-// ... (the pollJobStatus function remains the same)
 
   const handleSubmit = async () => {
     if (!selectedSurgery || !file || !residentName) {
@@ -160,8 +145,6 @@ export default function Home() {
       setIsAnalyzing(false);
     }
   };
-
-// ... (The rest of the component, including the JSX and pollJobStatus function, remains the same)
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900 p-4">
