@@ -1,3 +1,6 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,14 +11,14 @@ datasource db {
 }
 
 model Job {
-  id              String   @id @default(uuid())
-  status          String
-  gcsUrl          String
-  surgeryName     String
-  residentName    String?
+  id                String    @id @default(cuid())
+  status            String
+  gcsUrl            String
+  surgeryName       String
+  residentName      String?
   additionalContext String?
-  result          String? // JSON string
-  error           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  result            String?
+  error             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }

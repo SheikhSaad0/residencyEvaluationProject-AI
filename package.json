@@ -2,8 +2,11 @@
   "name": "my-new-surgical-app",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently \"npm:dev:*\"",
+    "dev:next": "next dev",
+    "dev:worker": "ts-node --transpile-only worker/processJobs.ts",
     "build": "next build",
     "start": "next start",
     "postinstall": "prisma generate",
@@ -34,9 +37,11 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^8.2.2",
     "eslint": "^9",
     "eslint-config-next": "15.3.4",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   }
 }
