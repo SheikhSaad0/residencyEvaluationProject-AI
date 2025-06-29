@@ -3,6 +3,8 @@ import { useRouter } from 'next/router';
 import Image from 'next/image';
 import SurgerySelector from '../components/SurgerySelector';
 
+import { Analytics } from "@vercel/analytics/next"
+
 interface PastEvaluation {
   id: string;
   surgery: string;
