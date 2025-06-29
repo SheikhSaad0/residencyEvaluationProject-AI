@@ -4,6 +4,25 @@ import { uploadFileToGCS } from '../../lib/gcs';
 import { kv } from '@vercel/kv';
 import { randomUUID } from 'crypto';
 
+// Define the necessary types to avoid using 'any'
+interface EvaluationStep {
+  score: number;
+  time: string;
+  comments: string;
+}
+
+interface EvaluationResult {
+  [key: string]: EvaluationStep | number | string | boolean | undefined;
+  caseDifficulty: number;
+  additionalComments: string;
+  transcription: string;
+  surgery: string;
+  residentName?: string;
+  additionalContext?: string;
+  isFinalized: boolean;
+}
+
+// Define the JobData interface with a specific type for the 'result' property
 interface JobData {
   id: string;
   status: 'pending' | 'processing' | 'complete' | 'failed';
@@ -11,7 +30,7 @@ interface JobData {
   surgeryName?: string;
   residentName?: string;
   additionalContext?: string;
-  result?: any;
+  result?: EvaluationResult; // Changed from 'any' to 'EvaluationResult'
   error?: string;
   createdAt: number;
 }
@@ -62,7 +81,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await kv.set(`job:${jobId}`, job);
 
     // 3. Trigger the processing job asynchronously (fire and forget).
-    // The base URL is dynamically determined from Vercel's environment variables.
     const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
     fetch(`${baseUrl}/api/process-job`, {
         method: 'POST',
