@@ -2,19 +2,6 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { kv } from '@vercel/kv';
 import { createClient } from '@deepgram/sdk';
 
-// Define the JobData interface directly in this file
-interface JobData {
-  id: string;
-  status: 'pending' | 'processing' | 'complete' | 'failed';
-  gcsUrl?: string;
-  surgeryName?: string;
-  residentName?: string;
-  additionalContext?: string;
-  result?: any;
-  error?: string;
-  createdAt: number;
-}
-
 // Define evaluation interfaces
 interface ProcedureStepConfig {
     key: string;
@@ -27,11 +14,26 @@ interface EvaluationStep {
   comments: string;
 }
 
+// The index signature is updated to be more permissive, allowing boolean and undefined values.
 interface GeminiEvaluationResult {
-  [key: string]: EvaluationStep | number | string;
+  [key: string]: EvaluationStep | number | string | boolean | undefined;
   caseDifficulty: number;
   additionalComments: string;
 }
+
+// Define the JobData interface directly in this file
+interface JobData {
+  id: string;
+  status: 'pending' | 'processing' | 'complete' | 'failed';
+  gcsUrl?: string;
+  surgeryName?: string;
+  residentName?: string;
+  additionalContext?: string;
+  result?: GeminiEvaluationResult; // This now uses the more permissive interface
+  error?: string;
+  createdAt: number;
+}
+
 
 interface EvaluationConfigs {
     [key: string]: {
@@ -140,6 +142,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const evaluation = await evaluateTranscriptWithGemini(transcription, job.surgeryName, job.additionalContext || '');
 
     // 3. Update job with result
+    // The structure of the 'result' object now conforms to the updated GeminiEvaluationResult interface
     const finalJobData: JobData = {
         ...job,
         status: 'complete',

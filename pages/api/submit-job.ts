@@ -1,6 +1,4 @@
 import { Storage } from '@google-cloud/storage';
-import fs from 'fs';
-import { Writable } from 'stream';
 
 // Decode the Base64 service account key
 const serviceAccountJson = Buffer.from(process.env.GCP_SERVICE_ACCOUNT_B64 || '', 'base64').toString('utf-8');

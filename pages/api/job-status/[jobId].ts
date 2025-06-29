@@ -1,5 +1,18 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { kv } from '@vercel/kv'; // Use Vercel KV instead of the direct Redis client
+import { kv } from '@vercel/kv';
+
+// Define evaluation interfaces to avoid 'any'
+interface EvaluationStep {
+  score: number;
+  time: string;
+  comments: string;
+}
+
+interface GeminiEvaluationResult {
+  [key: string]: EvaluationStep | number | string;
+  caseDifficulty: number;
+  additionalComments: string;
+}
 
 // Define the JobData interface to ensure type safety
 interface JobData {
@@ -9,7 +22,7 @@ interface JobData {
   surgeryName?: string;
   residentName?: string;
   additionalContext?: string;
-  result?: any;
+  result?: GeminiEvaluationResult; // Changed from any
   error?: string;
   createdAt: number;
 }
@@ -26,7 +39,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    // Use kv.get, which is consistent with your other API routes
     const job = await kv.get<JobData>(`job:${jobId}`);
 
     if (!job) {
