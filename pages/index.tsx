@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import SurgerySelector from '../components/SurgerySelector'; 
+import Image from 'next/image';
+import SurgerySelector from '../components/SurgerySelector';
 
 interface PastEvaluation {
   id: string;
@@ -52,7 +53,7 @@ export default function Home() {
         case 'pending':
           setProgress(30);
           setProgressStep('Job submitted. Waiting for processing to start...');
-          setTimeout(() => pollJobStatus(jobId), 4000); // Poll every 4 seconds
+          setTimeout(() => pollJobStatus(jobId), 4000);
           break;
         case 'processing-transcription':
           setProgress(50);
@@ -118,7 +119,6 @@ export default function Home() {
       setProgress(25);
       
       setProgressStep('File uploaded. Submitting for analysis...');
-      // The gcsUrl is now passed in the body of the submit request
       const gcsUrl = signedUrl.split('?')[0];
       const jobResponse = await fetch('/api/submit', {
         method: 'POST',
@@ -156,7 +156,6 @@ export default function Home() {
                 const errorData = await response.json();
                 throw new Error(errorData.message || 'Failed to delete evaluation.');
             }
-            // Refresh the list from the server to ensure consistency
             fetchPastEvaluations();
         } catch (err) {
             console.error(err);
@@ -279,10 +278,10 @@ export default function Home() {
                     </a>
                     <button 
                       onClick={() => handleDelete(evalItem.id)}
-                      className="ml-4 bg-red-500 text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-red-600 transition-colors"
+                      className="ml-4 p-1.5 transition-transform duration-200 transform hover:scale-125 focus:outline-none focus:ring-2 focus:ring-offset-slate-800 focus:ring-red-500 rounded-full"
                       aria-label={`Delete evaluation for ${evalItem.surgery}`}
                     >
-                      Delete
+                        <Image src="/images/trashcanIcon.png" alt="Delete" width={24} height={24} />
                     </button>
                   </li>
                 ))}
