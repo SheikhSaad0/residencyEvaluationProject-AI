@@ -5,8 +5,15 @@ const prisma = new PrismaClient();
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'GET') {
+        res.setHeader('Allow', ['GET']);
         return res.status(405).json({ message: 'Method not allowed' });
     }
+
+    // --- ADD THESE HEADERS TO PREVENT CACHING ---
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    // --- END OF NEW HEADERS ---
 
     const { jobId } = req.query;
 
