@@ -1,0 +1,16 @@
+[
+  {
+    "origin": [
+      "https://residency-evaluation-project-ai.vercel.app",
+      "https://*.sheikhsaad0s-projects.vercel.app",
+      "http://localhost:3000"
+    ],
+    "method": [
+      "PUT"
+    ],
+    "responseHeader": [
+      "Content-Type"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]
