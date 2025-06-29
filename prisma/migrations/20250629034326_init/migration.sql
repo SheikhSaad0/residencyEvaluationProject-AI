@@ -1,6 +1,6 @@
 -- CreateTable
 CREATE TABLE "Job" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "status" TEXT NOT NULL,
     "gcsUrl" TEXT NOT NULL,
     "surgeryName" TEXT NOT NULL,
@@ -8,6 +8,8 @@ CREATE TABLE "Job" (
     "additionalContext" TEXT,
     "result" TEXT,
     "error" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Job_pkey" PRIMARY KEY ("id")
 );
