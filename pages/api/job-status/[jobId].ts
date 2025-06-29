@@ -1,5 +1,8 @@
+// sheikhsaad0/residencyevaluationproject-ai/residencyEvaluationProject-AI-68d256d059a5b9bf8db75a362617c9e644066573/pages/api/job-status/[jobId].ts
 import { NextApiRequest, NextApiResponse } from 'next';
-import { kv } from '@vercel/kv';
+import { redis } from '@/lib/redis'; // USE PATH ALIAS
+
+// ... rest of the file remains the same
 
 // Define evaluation interfaces to avoid 'any'
 interface EvaluationStep {
@@ -22,7 +25,7 @@ interface JobData {
   surgeryName?: string;
   residentName?: string;
   additionalContext?: string;
-  result?: GeminiEvaluationResult; // Changed from any
+  result?: GeminiEvaluationResult;
   error?: string;
   createdAt: number;
 }
@@ -39,7 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const job = await kv.get<JobData>(`job:${jobId}`);
+    const job = await redis.get<JobData>(`job:${jobId}`);
 
     if (!job) {
       return res.status(404).json({ message: 'Job not found.' });

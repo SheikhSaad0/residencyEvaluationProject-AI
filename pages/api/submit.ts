@@ -1,6 +1,9 @@
+// sheikhsaad0/residencyevaluationproject-ai/residencyEvaluationProject-AI-68d256d059a5b9bf8db75a362617c9e644066573/pages/api/submit.ts
 import { NextApiRequest, NextApiResponse } from 'next';
-import { kv } from '@vercel/kv';
+import { redis } from '@/lib/redis'; // USE PATH ALIAS
 import { randomUUID } from 'crypto';
+
+// ... rest of the file remains the same
 
 // Define required types
 interface EvaluationStep {
@@ -32,10 +35,6 @@ interface JobData {
   createdAt: number;
 }
 
-
-// We now expect JSON, so the default bodyParser can be used.
-// You can remove the export const config block.
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'POST') {
         return res.status(405).json({ message: 'Method not allowed' });
@@ -61,7 +60,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             additionalContext,
             createdAt: Date.now(),
         };
-        await kv.set(`job:${jobId}`, job);
+        await redis.set(`job:${jobId}`, JSON.stringify(job));
 
         const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
         fetch(`${baseUrl}/api/process-job`, {

@@ -1,6 +1,9 @@
+// sheikhsaad0/residencyevaluationproject-ai/residencyEvaluationProject-AI-68d256d059a5b9bf8db75a362617c9e644066573/pages/api/process-job.ts
 import { NextApiRequest, NextApiResponse } from 'next';
-import { kv } from '@vercel/kv';
+import { redis } from '@/lib/redis'; // USE PATH ALIAS
 import { createClient } from '@deepgram/sdk';
+
+// ... rest of the file remains the same
 
 // Define evaluation interfaces
 interface ProcedureStepConfig {
@@ -14,14 +17,12 @@ interface EvaluationStep {
   comments: string;
 }
 
-// The index signature is updated to be more permissive, allowing boolean and undefined values.
 interface GeminiEvaluationResult {
   [key: string]: EvaluationStep | number | string | boolean | undefined;
   caseDifficulty: number;
   additionalComments: string;
 }
 
-// Define the JobData interface directly in this file
 interface JobData {
   id: string;
   status: 'pending' | 'processing' | 'complete' | 'failed';
@@ -29,11 +30,10 @@ interface JobData {
   surgeryName?: string;
   residentName?: string;
   additionalContext?: string;
-  result?: GeminiEvaluationResult; // This now uses the more permissive interface
+  result?: GeminiEvaluationResult;
   error?: string;
   createdAt: number;
 }
-
 
 interface EvaluationConfigs {
     [key: string]: {
@@ -112,60 +112,13 @@ const EVALUATION_CONFIGS: EvaluationConfigs = {
     },
 };
 
-
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY || '');
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' });
-  }
-
-  const { jobId } = req.body;
-  if (!jobId) {
-    return res.status(400).json({ message: 'jobId is required.' });
-  }
-  
-  res.status(202).json({ message: 'Processing started.' });
-
-  try {
-    const job = await kv.get<JobData>(`job:${jobId}`);
-    if (!job || !job.gcsUrl || !job.surgeryName) {
-      throw new Error('Job not found or is missing data.');
-    }
-
-    await kv.set(`job:${jobId}`, { ...job, status: 'processing' });
-
-    // 1. Transcribe from GCS URL
-    const transcription = await transcribeWithDeepgram(job.gcsUrl);
-
-    // 2. Evaluate
-    const evaluation = await evaluateTranscriptWithGemini(transcription, job.surgeryName, job.additionalContext || '');
-
-    // 3. Update job with result
-    // The structure of the 'result' object now conforms to the updated GeminiEvaluationResult interface
-    const finalJobData: JobData = {
-        ...job,
-        status: 'complete',
-        result: {
-            ...evaluation,
-            transcription,
-            surgery: job.surgeryName,
-            residentName: job.residentName,
-            additionalContext: job.additionalContext,
-            isFinalized: false,
-        }
-    };
-    await kv.set(`job:${jobId}`, finalJobData);
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
-    const job = await kv.get<JobData>(`job:${jobId}`);
-    if(job) {
-        await kv.set(`job:${jobId}`, { ...job, status: 'failed', error: errorMessage });
-    }
-  }
+interface SchemaProperties {
+    [key: string]: { type: string; properties?: { [key: string]: { type: string } } };
 }
 
+// MOVED HELPER FUNCTIONS HERE, BEFORE THE HANDLER
 async function transcribeWithDeepgram(gcsUrl: string): Promise<string> {
     const { result, error } = await deepgram.listen.prerecorded.transcribeUrl(
       { url: gcsUrl },
@@ -184,9 +137,6 @@ async function transcribeWithDeepgram(gcsUrl: string): Promise<string> {
         .join('\n');
 }
 
-interface SchemaProperties {
-    [key: string]: { type: string; properties?: { [key: string]: { type: string } } };
-}
 
 async function evaluateTranscriptWithGemini(transcription: string, surgeryName: string, additionalContext: string): Promise<GeminiEvaluationResult> {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -274,4 +224,55 @@ async function evaluateTranscriptWithGemini(transcription: string, surgeryName: 
     const result = await response.json();
     const resultText = result.candidates[0].content.parts[0].text;
     return JSON.parse(resultText) as GeminiEvaluationResult;
+}
+
+// MAIN HANDLER
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  const { jobId } = req.body;
+  if (!jobId) {
+    return res.status(400).json({ message: 'jobId is required.' });
+  }
+  
+  res.status(202).json({ message: 'Processing started.' });
+
+  try {
+    const job = await redis.get<JobData>(`job:${jobId}`);
+    if (!job || !job.gcsUrl || !job.surgeryName) {
+      throw new Error('Job not found or is missing data.');
+    }
+
+    await redis.set(`job:${jobId}`, JSON.stringify({ ...job, status: 'processing' }));
+
+    // 1. Transcribe from GCS URL
+    const transcription = await transcribeWithDeepgram(job.gcsUrl);
+
+    // 2. Evaluate
+    const evaluation = await evaluateTranscriptWithGemini(transcription, job.surgeryName, job.additionalContext || '');
+
+    // 3. Update job with result
+    const finalJobData: JobData = {
+        ...job,
+        status: 'complete',
+        result: {
+            ...evaluation,
+            transcription,
+            surgery: job.surgeryName,
+            residentName: job.residentName,
+            additionalContext: job.additionalContext,
+            isFinalized: false,
+        }
+    };
+    await redis.set(`job:${jobId}`, JSON.stringify(finalJobData));
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+    const job = await redis.get<JobData>(`job:${jobId}`);
+    if(job) {
+        await redis.set(`job:${jobId}`, JSON.stringify({ ...job, status: 'failed', error: errorMessage }));
+    }
+  }
 }
