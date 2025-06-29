@@ -48,13 +48,53 @@ export default function Home() {
     setPastEvaluations(evaluations);
   }, []);
 
+  const pollJobStatus = async (jobId: string) => {
+    try {
+      const response = await fetch(`/api/job-status/${jobId}`);
+      if (!response.ok) {
+        throw new Error('Could not retrieve job status. The process may be running in the background.');
+      }
+
+      const data = await response.json();
+
+      switch (data.status) {
+        case 'pending':
+          setProgress(25);
+          setProgressStep('File uploaded. Analysis is pending...');
+          setTimeout(() => pollJobStatus(jobId), 4000); // Poll every 4 seconds
+          break;
+        case 'processing':
+          setProgress(50);
+          setProgressStep('Transcription and evaluation in progress...');
+          setTimeout(() => pollJobStatus(jobId), 4000);
+          break;
+        case 'complete':
+          setProgress(100);
+          setProgressStep('Analysis complete!');
+          const id = data.result.id || Date.now().toString();
+          localStorage.setItem(`evaluation-${id}`, JSON.stringify({
+            ...data.result,
+          }));
+          router.push(`/results/${id}`);
+          break;
+        case 'failed':
+          throw new Error(data.error || 'The analysis job failed.');
+      }
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while checking status.';
+        setError(errorMessage);
+        setIsAnalyzing(false);
+    }
+  };
+
+
   const handleSubmit = async () => {
     if (!selectedSurgery || !file || !residentName) {
       setError("Please select a surgery, enter the resident's name, and upload an audio or video file.");
       return;
     }
-    if (!['audio/mpeg', 'video/mp4', 'video/webm', 'video/ogg'].includes(file.type)) {
-      setError('Please upload an MP3, MP4, WebM, or Ogg file.');
+    if (!file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
+      setError('Please upload a valid audio or video file.');
       return;
     }
 
@@ -69,38 +109,27 @@ export default function Home() {
     formData.append('additionalContext', additionalContext);
 
     try {
-      setProgress(25);
-      setProgressStep('Transcribing audio...');
-      const response = await fetch('/api/analyze', {
+      // Change from /api/analyze to the new /api/submit endpoint
+      const response = await fetch('/api/submit', {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Analysis failed');
+        throw new Error(errorData.message || 'Failed to submit analysis job.');
       }
 
-      setProgress(75);
-      setProgressStep('Evaluating transcript...');
-      const analysisResult = await response.json();
+      setProgress(10);
+      setProgressStep('File uploaded. Initializing analysis...');
+      const { jobId } = await response.json();
       
-      setProgress(100);
-      setProgressStep('Analysis complete!');
+      // Start polling for the result
+      pollJobStatus(jobId);
 
-      const id = Date.now().toString();
-      localStorage.setItem(`evaluation-${id}`, JSON.stringify({
-        ...analysisResult,
-        surgery: selectedSurgery,
-        residentName: residentName,
-        additionalContext: additionalContext,
-      }));
-
-      router.push(`/results/${id}`);
     } catch (error) {
-      console.error('Error during analysis:', error);
+      console.error('Error during analysis submission:', error);
       setError(error instanceof Error ? error.message : 'An unknown error occurred.');
-    } finally {
       setIsAnalyzing(false);
     }
   };
@@ -162,11 +191,11 @@ export default function Home() {
                 <div className="mt-4 flex text-sm leading-6 text-gray-600 dark:text-gray-400">
                   <label htmlFor="file-upload" className="relative cursor-pointer rounded-md bg-white dark:bg-slate-800 font-semibold text-brand-green focus-within:outline-none focus-within:ring-2 focus-within:ring-brand-green focus-within:ring-offset-2 dark:focus-within:ring-offset-slate-800 hover:text-brand-green-500">
                     <span>Upload a file</span>
-                    <input id="file-upload" name="file-upload" type="file" className="sr-only" accept="audio/mpeg,video/mp4,video/webm,video/ogg" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                    <input id="file-upload" name="file-upload" type="file" className="sr-only" accept="audio/*,video/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
                   </label>
                   <p className="pl-1">or drag and drop</p>
                 </div>
-                <p className="text-xs leading-5 text-gray-600 dark:text-gray-400">{file ? file.name : "MP3, MP4, WebM, Ogg (up to 200MB)"}</p>
+                <p className="text-xs leading-5 text-gray-600 dark:text-gray-400">{file ? file.name : "Audio or Video File (up to 200MB)"}</p>
               </div>
             </div>
           </div>
