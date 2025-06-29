@@ -11,11 +11,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
         const { gcsUrl, surgeryName, residentName, additionalContext } = req.body;
 
-        if (!gcsUrl) {
-            return res.status(400).json({ message: 'gcsUrl is required.' });
-        }
-        if (!surgeryName) {
-            return res.status(400).json({ message: 'Surgery name is required.' });
+        if (!gcsUrl || !surgeryName) {
+            return res.status(400).json({ message: 'gcsUrl and surgeryName are required.' });
         }
 
         const job = await prisma.job.create({
@@ -28,10 +25,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             },
         });
 
-        // You do NOT "fire and forget" background processing here anymore.
-        // The worker script will poll the DB for new jobs.
+        // --- UPDATED TRIGGER ---
+        const host = req.headers.host || 'localhost:3000';
+        const protocol = /^localhost/.test(host) ? 'http' : 'https';
+        // Note the new path and the jobId query parameter
+        const processUrl = new URL(`${protocol}://${host}/api/process-job?jobId=${job.id}`);
+
+        fetch(processUrl.href, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${process.env.CRON_SECRET}`
+            }
+        }).catch(error => {
+            console.error('[Trigger Error] Failed to start job processing:', error);
+        });
+        // --- END OF UPDATE ---
 
         res.status(202).json({ jobId: job.id });
+
     } catch (error) {
         console.error('Error submitting job:', error);
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
